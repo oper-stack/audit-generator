@@ -1,0 +1,79 @@
+{
+  "meta": { "site": "https://www.example-villas.example/", "host": "www.example-villas.example", "collectedAt": "2026-09-10T09:00:00.000Z", "tool": "@operstack/audit 0.1.0", "auditType": "External audit (no Search Console or analytics access)" },
+  "client": { "name": "Example Villas", "subject": "A pool villa developer's site in a fictional resort market: technical SEO, content, answer-engine readiness and a 90 day plan.", "reportDate": "2026-09-10", "preparedBy": "OperStack" },
+  "scores": { "SEO, technical": 3, "SEO, content and structure": 4, "AEO, answers and snippets": 5, "GEO, visibility in AI systems": 2, "Off-page and trust": 6, "Conversion and UX": 5 },
+  "scoreNotes": { "SEO, technical": "Broken sitemap, slow first byte, template leftovers", "SEO, content and structure": "A blog exists; the homepage sells three things at once", "AEO, answers and snippets": "FAQ schema present, answers shallow", "GEO, visibility in AI systems": "llms.txt points at a demo domain", "Off-page and trust": "Portal listings exist, brand name collides", "Conversion and UX": "Form works, price is a placeholder" },
+  "summary": {
+    "lead": "The site is a working marketing page for a villa developer. Search engines index about 18 pages, an eight-article blog is live and FAQ markup is in place. It does not work as a search engine asset yet: the sitemap answers 404, the homepage description carries a form shortcode, and the AI index describes another business.",
+    "verdict": "The site is not invisible, it is misread. Three technical defects and a homepage that sells three products at once cost it most of its organic potential. Every critical item can be fixed inside two weeks.",
+    "priorities": ["Technical foundation: sitemap, meta description, llms.txt, utility pages out of the index.", "Demand-led structure: one page per project, one per location, one buyer guide.", "Trust content: sourced ownership answers, comparison tables and a FAQ that answer engines can quote."]
+  },
+  "overview": {
+    "rows": [["CMS / stack", "WordPress, page builder, commerce plugin, forms plugin"], ["Pages in sitemap", "21"], ["Language", "English, single version"], ["What is sold", "Two villa projects presented on one homepage"]],
+    "note": "Three offers share the homepage: a price headline with a placeholder, a block about a seven-villa project and a block about a second phase with overlapping copy. A visitor and a crawler both leave unsure which product the site sells."
+  },
+  "critical": [
+    { "title": "XML sitemap answers 404", "text": "robots.txt points at sitemap_index.xml and the server returns 404. Search engines crawl without a map: slower and less complete.", "level": "bad" },
+    { "title": "Homepage meta description contains a form shortcode", "text": "The description field holds an encoded form tag. In results it renders as technical garbage instead of a sales sentence.", "level": "bad" },
+    { "title": "llms.txt describes a demo site", "text": "The file exists, which is a positive signal, but its links go to a template demo domain with unrelated products. An AI system reading it may misidentify the business.", "level": "bad" },
+    { "title": "Commerce utility pages are indexable", "text": "Shop, compare and wishlist pages carry index directives and demo products. They add noise to a 21 page index.", "level": "warn" }
+  ],
+  "checks": [
+    { "id": "https", "group": "technical", "label": "HTTPS", "status": "ok", "value": "certificate active" },
+    { "id": "www", "group": "technical", "label": "www canonicalisation", "status": "ok", "value": "non-www redirects to www (301)" },
+    { "id": "ttfb", "group": "technical", "label": "Time to first byte (homepage)", "status": "bad", "value": "3,300 ms", "comment": "single request from the auditor, not a lab test" },
+    { "id": "robots", "group": "technical", "label": "robots.txt", "status": "warn", "value": "3 disallow rule(s), 1 sitemap line(s)", "comment": "the sitemap it names answers 404" },
+    { "id": "sitemap", "group": "technical", "label": "XML sitemap", "status": "bad", "value": "sitemap_index.xml answers HTTP 404" },
+    { "id": "canonical", "group": "technical", "label": "Canonical tag", "status": "ok", "value": "https://www.example-villas.example/" },
+    { "id": "viewport", "group": "technical", "label": "Mobile viewport", "status": "warn", "value": "width=device-width, initial-scale=1, user-scalable=no", "comment": "blocks zoom: bad for accessibility and mobile SEO" },
+    { "id": "og", "group": "technical", "label": "Open Graph and Twitter cards", "status": "warn", "value": "og:title, og:image, twitter:summary_large_image", "comment": "description carries the same shortcode" },
+    { "id": "resources", "group": "technical", "label": "Page weight (homepage)", "status": "bad", "value": "39 script file(s), 14 stylesheet(s), 39 image(s)" },
+    { "id": "title", "group": "onpage", "label": "Homepage title", "status": "warn", "value": "\"Home - Example Villas\" (21 chars)", "comment": "short: the words that earn the click are missing" },
+    { "id": "description", "group": "onpage", "label": "Homepage meta description", "status": "bad", "value": "contains a shortcode or encoded data" },
+    { "id": "h1", "group": "onpage", "label": "H1 on homepage", "status": "warn", "value": "3 H1 tag(s)", "comment": "more than one H1 dilutes the page topic" },
+    { "id": "alt", "group": "onpage", "label": "Image alt text", "status": "bad", "value": "3 of 39 images carry alt text (8%) across 12 sampled page(s)" },
+    { "id": "h1-sample", "group": "onpage", "label": "Heading structure across sample", "status": "bad", "value": "9 of 12 pages carry more than one H1" },
+    { "id": "thin", "group": "content", "label": "Thin pages in sample", "status": "ok", "value": "median 1,600 words per page" },
+    { "id": "dates", "group": "content", "label": "Publication dates exposed", "status": "warn", "value": "modified dates precede published dates on 3 articles" },
+    { "id": "schema", "group": "aeo", "label": "Structured data on homepage", "status": "ok", "value": "RealEstateAgent, Organization, FAQPage" },
+    { "id": "faq-schema", "group": "aeo", "label": "FAQPage schema", "status": "ok", "value": "present on 1 sampled page(s)" },
+    { "id": "llms", "group": "geo", "label": "llms.txt", "status": "bad", "value": "14 link(s), 12 to other hosts", "comment": "links to a template demo domain: an AI system may misidentify the business" },
+    { "id": "org-schema", "group": "geo", "label": "Organization or business schema", "status": "ok", "value": "present" }
+  ],
+  "content": {
+    "strengths": ["FAQ block on the homepage, a base for answer engines", "Enquiry form with a budget field", "Location block with real distances", "Key features with figures: 7 villas, 240 sqm plots"],
+    "weaknesses": ["Title and description do not name the product or the place", "No single H1 with the project name and a real price", "The ownership FAQ is one sentence where buyers need a table", "Two different office addresses in the footer"],
+    "gaps": ["/projects/<name>/: prices, floor plans, gallery, FAQ", "/location/<district>/: map, distances, infrastructure", "/foreign-buyers-guide/: ownership routes, fees, timeline", "/availability/: current prices and stock"]
+  },
+  "aeo": {
+    "works": ["FAQPage schema with seven questions", "Organization and business schema", "Question and answer format in the FAQ block", "Blog articles cover informational intent"],
+    "blocks": ["Ownership answers too short: no lease route, no risks", "No comparison tables for ownership options", "No sourced yield or price figures", "No expert bylines"],
+    "recommendation": "Publish one buyer guide with tables on ownership routes, fees and timeline, written so that a single paragraph can be quoted as the answer."
+  },
+  "geo": {
+    "rows": [["Entity clarity", "△ Weak", "Schema present, but content confuses two project names"], ["Brand disambiguation", "✗ Problem", "The brand name matches a residential district in another country"], ["Third-party mentions", "✓ Present", "Listings on three property portals"], ["Reviews and PR", "✗ None", "No independent reviews found"]],
+    "callout": "Brand collision: for the bare brand name, search engines show a district elsewhere rather than the developer. Use the brand together with the place in titles, schema and external profiles."
+  },
+  "offpage": {
+    "listed": ["Two property portals carry the project with prices", "One aggregator carries a developer profile", "One agency page carries villa specifications"],
+    "note": "Portal listings drive discovery, but the authority accrues to the portals. The owned site's job is to become the primary source the portals link to."
+  },
+  "conversion": {
+    "rows": [["Enquiry form", "✓ Works, budget field present"], ["Price on homepage", "✗ Placeholder instead of a figure"], ["Footer address", "✗ Two different addresses"], ["Call to action", "△ No clear next step"], ["Messengers", "△ Phone and email only"], ["Commerce plugin for 3 villas", "△ Adds weight without benefit"]]
+  },
+  "limitations": ["Google Search Console: no impressions, clicks or query data", "Analytics: no traffic or behaviour data", "Keyword and backlink tools: not used in the external tier", "Lab performance report: not run; the first-byte figure is a single request"],
+  "roadmap": [
+    { "badge": "Week 1", "title": "Critical, quick wins", "items": ["Fix the XML sitemap and confirm the URL in robots.txt answers 200", "Rewrite the homepage title and description; remove the shortcode", "Rewrite llms.txt for the actual business; remove demo links", "Set noindex on shop, compare and wishlist", "One H1 on the homepage with the project name and a real starting price", "Remove user-scalable=no"] },
+    { "badge": "Weeks 2 to 4", "title": "Foundation", "items": ["Project page with prices, plans and FAQ", "Buyer guide with ownership routes and fees", "Location page with map and distances", "Alt text on every image", "Search Console and Bing Webmaster connected", "One product line on the homepage, or two clearly separated"] },
+    { "badge": "Months 2 to 3", "title": "Organic growth, AEO and GEO", "items": ["12 to 15 articles by intent cluster", "Product and place schema on villa pages", "PR and mentions in local property media", "Business profile for the office and the project location", "FAQ expanded to 15 to 20 sourced answers", "Comparison tables for ownership, fees and timeline"] }
+  ],
+  "closing": "A beautiful site and a search asset are not the same thing. This one is pointed the right way, with a blog, a FAQ and schema, but was never cleaned up after launching on a template. The critical items take two weeks and show in Search Console within 30 to 60 days.",
+  "sample": [
+    { "url": "https://www.example-villas.example/", "title": "Home - Example Villas", "words": 940, "h1Count": 3, "images": 21, "imagesNoAlt": 19, "schemaTypes": ["RealEstateAgent", "Organization", "FAQPage"] },
+    { "url": "https://www.example-villas.example/about/", "title": "About - Example Villas", "words": 420, "h1Count": 2, "images": 6, "imagesNoAlt": 6, "schemaTypes": [] },
+    { "url": "https://www.example-villas.example/blog/why-invest/", "title": "Why invest in a pool villa", "words": 1610, "h1Count": 2, "images": 4, "imagesNoAlt": 4, "schemaTypes": ["Article"] },
+    { "url": "https://www.example-villas.example/blog/location/", "title": "The location explained", "words": 1580, "h1Count": 2, "images": 5, "imagesNoAlt": 4, "schemaTypes": ["Article"] },
+    { "url": "https://www.example-villas.example/contact/", "title": "Contact - Example Villas", "words": 180, "h1Count": 1, "images": 3, "imagesNoAlt": 3, "schemaTypes": [] }
+  ],
+  "notes": []
+}
