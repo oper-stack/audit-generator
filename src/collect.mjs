@@ -62,7 +62,8 @@ function analysePage(url, html) {
   const text = (body?.text ?? '').replace(/\s+/g, ' ').trim();
   const words = (text.match(/[\p{L}\p{N}][\p{L}\p{N}'’-]*/gu) || []).length;
   const links = root.querySelectorAll('a[href]').map((a) => a.getAttribute('href') || '');
-  const dates = { published: attr('meta[property="article:published_time"]', 'content'), modified: attr('meta[property="article:modified_time"]', 'content') };
+  const ld = root.querySelectorAll('script[type="application/ld+json"]').map((x) => x.text).join('\n');
+  const dates = { published: attr('meta[property="article:published_time"]', 'content') || (ld.match(/"datePublished"\s*:\s*"([^"]+)"/) || [])[1] || '', modified: attr('meta[property="article:modified_time"]', 'content') || (ld.match(/"dateModified"\s*:\s*"([^"]+)"/) || [])[1] || '' };
   const shortcode = /\[[a-z_-]+ [^\]]*\]/i.test(description) || /^[A-Za-z0-9+/=]{40,}$/.test(description);
   return { url, title, titleLength: title.length, description, descriptionLength: description.length, descriptionGarbage: shortcode, h1Count: h1s.length, h1: h1s[0] || '', images: imgs.length, imagesNoAlt: imgsNoAlt, canonical, robots, viewport, og, twitter, generator, hreflang, scripts, stylesheets, schemaTypes: [...new Set(schemaTypes)], words, links, dates };
 }
@@ -138,7 +139,9 @@ export async function collect(startUrl, { pages = 20, log = () => {} } = {}) {
     !llms.ok ? 'answer engines get nothing to read; a generated index is a one-day job' : llmsForeign.length > 3 ? `links to ${[...new Set(llmsForeign.map((u) => new URL(u).host))].slice(0, 3).join(', ')}: an AI system may misidentify the business` : ''));
 
   log(`sampling up to ${pages} pages`);
-  const pool = [home.final, ...sitemapPages.filter((u) => u !== home.final && u !== startUrl)];
+  const norm = (u) => { try { const x = new URL(u); x.hash = ''; x.search = ''; if (!x.pathname.includes('.') && !x.pathname.endsWith('/')) x.pathname += '/'; return x.href.toLowerCase(); } catch { return u; } };
+  const seenUrl = new Set([norm(home.final), norm(startUrl)]);
+  const pool = [home.final, ...sitemapPages.filter((u) => { const n = norm(u); if (seenUrl.has(n)) return false; seenUrl.add(n); return true; })];
   const sample = [];
   for (const u of pool.slice(0, pages)) {
     const r = await get(u);
