@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.0
+
+### Added
+- **The report renders in Russian.** Set `meta.lang` to `ru` in `audit.json` and every heading, column, status word, section name and footnote comes out in Russian, including the six area names and the evidence line under each score, which declines the word for "check" correctly. English stays the default and is unchanged.
+
+### Note
+- `collect` still writes check labels and values in English. A Russian report needs those rows translated in the JSON before rendering; the tool's own chrome is handled.
+
 ## 0.3.3
 
 ### Fixed

@@ -12,7 +12,71 @@ import { computeScores } from './collect.mjs';
 const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const isPlaceholder = (s) => typeof s === 'string' && /\{\{[^}]*\}\}/.test(s);
 const t = (s) => (isPlaceholder(s) ? `<mark class="todo">${esc(s)}</mark>` : esc(s));
-const STATUS = { ok: ['✓ OK', 'status-ok'], warn: ['△ Partial', 'status-warn'], bad: ['✗ Problem', 'status-bad'], na: ['· Note', 'status-na'] };
+
+/** Подписи отчёта. Язык берётся из audit.meta.lang, по умолчанию английский. */
+const LABELS = {
+  en: {
+    eyebrowAudit: 'Digital marketing audit', coverTitle: 'SEO, AEO and GEO<br>audit report',
+    auditSubject: 'Audit subject', reportDate: 'Report date', auditType: 'Audit type', preparedBy: 'Prepared by',
+    collectedBy: (tool, date) => `Public signals were collected by ${tool} on ${date}. Every status in this report can be reproduced from the site as it stood on that day.`,
+    secSummary: 'Executive summary', summaryEyebrow: '01 · Summary', keyTakeaway: 'Key takeaway:', threePriorities: 'Three priorities',
+    scorecardFoot: 'Each score counts the checks in this report: a check that passes scores one, a check that needs attention a half, a failing check nothing. An area marked <strong>not measured</strong> is an area this audit does not test, and is never scored on an impression. Every figure here can be recomputed from section 04 onwards.',
+    notMeasured: 'not measured',
+    secOverview: 'Site overview', overviewEyebrow: '02 · Overview', whatSiteIs: 'What the site is', parameter: 'Parameter', value: 'Value', pagesSampled: 'Pages sampled', colUrl: 'URL', colTitle: 'Title', colWords: 'Words',
+    secCritical: 'Critical issues', criticalEyebrow: '03 · P0', criticalTitle: 'Critical issues, fix first', whatItCosts: 'What it costs', theFix: 'Fix', noBody: 'This issue has no description in the audit file.', noCritical: 'No critical defects were found in the public signals.',
+    secTechnical: 'Technical SEO', technicalEyebrow: '04 · Technical', technicalTitle: 'Technical and on-page checklist', colCheck: 'Check', colStatus: 'Status', colFinding: 'Finding',
+    secContent: 'Content and on-page', contentEyebrow: '05 · Content', contentTitle: 'Content and on-page SEO', strengths: 'Strengths', weaknesses: 'Weaknesses', gaps: 'Structural gaps: pages that do not exist yet',
+    secAeo: 'AEO and GEO', aeoEyebrow: '06 · AEO / GEO', aeoTitle: 'Answer engines: AEO', aeoLead: 'Whether the site\'s answers can be lifted into "People also ask", AI overviews, ChatGPT and Perplexity.', aeoWorks: 'What already works', aeoBlocks: 'What blocks the wins', recommendation: 'Recommendation:', geoTitle: 'Generative engines: GEO', colSignal: 'Signal', colDetail: 'Detail',
+    secOffpage: 'Off-page, conversion, limitations', offpageEyebrow: '07 · Off-page', offpageTitle: 'Off-page and trust', conversionEyebrow: '08 · Conversion', conversionTitle: 'Conversion and UX', colElement: 'Element', limitationsEyebrow: '09 · Limitations', sourcesTitle: 'Where the data comes from', colSource: 'Source', colAccess: 'Access', colWhatRead: 'What was read',
+    sourcesFoot: 'Every score in this report is computed from sources marked free. Nothing that costs money is counted in a score, so you can re-run this audit yourself and get the same numbers.',
+    limitations: 'Limitations',
+    secRoadmap: 'Roadmap', roadmapEyebrow: '10 · Roadmap', roadmapTitle: 'What to do, in order', keyMessage: 'Key message:',
+    runningHead: 'SEO, AEO and GEO audit',
+    statusOk: '✓ OK', statusWarn: '△ Partial', statusBad: '✗ Problem', statusNa: '· Note',
+    areas: null,
+    basisNote: (b) => `${b.ok} of ${b.counted} checks pass${b.warn ? `, ${b.warn} ${b.warn === 1 ? 'needs' : 'need'} attention` : ''}${b.bad ? `, ${b.bad} ${b.bad === 1 ? 'fails' : 'fail'}` : ''}`,
+    notMeasuredReason: { 'Off-page and trust': 'no link or mention data was collected', 'Conversion and UX': 'no conversion signals were collected' },
+  },
+  ru: {
+    eyebrowAudit: 'Аудит цифрового маркетинга', coverTitle: 'Аудит сайта:<br>SEO, AEO и GEO',
+    auditSubject: 'Что проверяли', reportDate: 'Дата отчёта', auditType: 'Тип аудита', preparedBy: 'Кто готовил',
+    collectedBy: (tool, date) => `Публичные сигналы собраны инструментом ${tool} ${date}. Любой статус в этом отчёте можно перепроверить по сайту в том виде, в каком он был в этот день.`,
+    secSummary: 'Главное', summaryEyebrow: '01 · Итог', keyTakeaway: 'Главный вывод:', threePriorities: 'Три приоритета',
+    scorecardFoot: 'Каждая оценка считает проверки из этого же отчёта: пройденная проверка это балл, спорная половина балла, проваленная ноль. Область с пометкой <strong>не измерялось</strong> это область, которую аудит не проверяет, и она никогда не оценивается на глаз. Любую цифру отсюда можно пересчитать по разделам начиная с четвёртого.',
+    notMeasured: 'не измерялось',
+    secOverview: 'О сайте', overviewEyebrow: '02 · Обзор', whatSiteIs: 'Что это за сайт', parameter: 'Параметр', value: 'Значение', pagesSampled: 'Проверенные страницы', colUrl: 'Адрес', colTitle: 'Заголовок', colWords: 'Слов',
+    secCritical: 'Критичное', criticalEyebrow: '03 · Срочно', criticalTitle: 'Что чинить первым', whatItCosts: 'Чем это грозит', theFix: 'Как чинится', noBody: 'У этой проблемы нет описания в файле аудита.', noCritical: 'Критичных дефектов в публичных сигналах не найдено.',
+    secTechnical: 'Техническое SEO', technicalEyebrow: '04 · Техника', technicalTitle: 'Техническая проверка и страницы', colCheck: 'Проверка', colStatus: 'Статус', colFinding: 'Что нашли',
+    secContent: 'Контент и страницы', contentEyebrow: '05 · Контент', contentTitle: 'Контент и внутренняя оптимизация', strengths: 'Сильные стороны', weaknesses: 'Слабые места', gaps: 'Структурные дыры: страниц, которых пока нет',
+    secAeo: 'AEO и GEO', aeoEyebrow: '06 · AEO / GEO', aeoTitle: 'Ответные системы: AEO', aeoLead: 'Может ли ответ с вашего сайта попасть в блок «Люди также спрашивают», в ответы ИИ, в ChatGPT и Perplexity.', aeoWorks: 'Что уже работает', aeoBlocks: 'Что мешает', recommendation: 'Рекомендация:', geoTitle: 'Генеративные системы: GEO', colSignal: 'Сигнал', colDetail: 'Подробности',
+    secOffpage: 'Ссылки, конверсия, ограничения', offpageEyebrow: '07 · Ссылки', offpageTitle: 'Ссылки и доверие', conversionEyebrow: '08 · Конверсия', conversionTitle: 'Конверсия и удобство', colElement: 'Элемент', limitationsEyebrow: '09 · Ограничения', sourcesTitle: 'Откуда взяты данные', colSource: 'Источник', colAccess: 'Доступ', colWhatRead: 'Что прочитали',
+    sourcesFoot: 'Каждая оценка в этом отчёте посчитана из источников с пометкой «бесплатно». Ничего платного ни в одну оценку не входит, поэтому вы можете повторить этот аудит сами и получить те же цифры.',
+    limitations: 'Ограничения',
+    secRoadmap: 'План работ', roadmapEyebrow: '10 · План', roadmapTitle: 'Что делать и в каком порядке', keyMessage: 'Главное сообщение:',
+    runningHead: 'Аудит SEO, AEO и GEO',
+    statusOk: '✓ Норма', statusWarn: '△ Частично', statusBad: '✗ Проблема', statusNa: '· Заметка',
+    areas: {
+      'SEO, technical': 'SEO, техническая часть',
+      'SEO, content and structure': 'SEO, контент и структура',
+      'AEO, answers and snippets': 'AEO, ответы и сниппеты',
+      'GEO, visibility in AI systems': 'GEO, видимость в системах ИИ',
+      'Off-page and trust': 'Ссылки и доверие',
+      'Conversion and UX': 'Конверсия и удобство',
+    },
+    basisNote: (b) => {
+      const w = (n, one, few, many) => { const d = n % 10, dd = n % 100; return n + ' ' + (d === 1 && dd !== 11 ? one : d >= 2 && d <= 4 && (dd < 10 || dd >= 20) ? few : many); };
+      const parts = [`${b.ok} из ${w(b.counted, 'проверки', 'проверок', 'проверок')} пройдено`];
+      if (b.warn) parts.push(`${w(b.warn, 'спорная', 'спорные', 'спорных')}`);
+      if (b.bad) parts.push(`${w(b.bad, 'провалена', 'провалены', 'провалено')}`);
+      return parts.join(', ');
+    },
+    notMeasuredReason: { 'Off-page and trust': 'данные по ссылкам и упоминаниям не собирались', 'Conversion and UX': 'сигналы конверсии не собирались' },
+  },
+};
+
+const STATUS_KEYS = { ok: 'statusOk', warn: 'statusWarn', bad: 'statusBad', na: 'statusNa' };
+const STATUS_CLASS = { ok: 'status-ok', warn: 'status-warn', bad: 'status-bad', na: 'status-na' };
+const STATUS_UNUSED = { ok: ['✓ OK', 'status-ok'], warn: ['△ Partial', 'status-warn'], bad: ['✗ Problem', 'status-bad'], na: ['· Note', 'status-na'] };
 const scoreClass = (n) => (n === null || n === undefined ? '' : n <= 3 ? 'low' : n <= 6 ? 'mid' : 'ok');
 
 export function checkNarrative(audit) {
@@ -87,47 +151,51 @@ function css() {
   `;
 }
 
-const header = (audit, section) => `<div class="page-header"><strong>${esc(audit.client.name)}</strong><span>SEO, AEO and GEO audit · ${esc(section)}</span></div>`;
+const header = (audit, section, L) => `<div class="page-header"><strong>${esc(audit.client.name)}</strong><span>${esc(L.runningHead)} · ${esc(section)}</span></div>`;
 const footer = (audit, n) => `<div class="page-footer"><span>${esc(audit.client.preparedBy || 'OperStack')} · ${esc(audit.client.reportDate)}</span><span>${n}</span></div>`;
 const list = (items) => `<ul>${(items || []).map((i) => `<li>${t(i)}</li>`).join('')}</ul>`;
 const olist = (items) => `<ol>${(items || []).map((i) => `<li>${t(i)}</li>`).join('')}</ol>`;
-const statusCell = (s) => { const [label, cls] = STATUS[s] || STATUS.na; return `<td class="${cls}">${label}</td>`; };
+const statusCell = (s, L) => `<td class="${STATUS_CLASS[s] || STATUS_CLASS.na}">${L[STATUS_KEYS[s] || 'statusNa']}</td>`;
 
 export function toHtml(audit) {
   const a = audit;
+  const L = LABELS[a.meta?.lang === 'ru' ? 'ru' : 'en'];
   const groups = [['technical', 'Technical'], ['onpage', 'On-page'], ['content', 'Content'], ['aeo', 'Answer engines'], ['geo', 'Generative engines'], ['offpage', 'Off-page and trust'], ['conversion', 'Conversion'], ['overview', 'Overview']];
   const checksBy = (g) => (a.checks || []).filter((c) => c.group === g);
   const { scores: measured, scoreBasis } = computeScores(a.checks || []);
   const scoreCards = Object.entries(measured).map(([label, n]) => {
     const basis = scoreBasis[label] || {};
-    const num = n === null ? '<span class="score-num na">not measured</span>' : `<span class="score-num ${scoreClass(n)}">${n}/10</span>`;
-    const note = n === null ? String(basis.note || '').replace(/^not measured:\s*/, '') : basis.note || '';
-    return `<div class="score"><div class="label">${esc(label)}</div><div class="score-row">${num}<span class="score-note">${esc(note)}</span></div></div>`;
+    const shown = (L.areas && L.areas[label]) || label;
+    const num = n === null ? `<span class="score-num na">${L.notMeasured}</span>` : `<span class="score-num ${scoreClass(n)}">${n}/10</span>`;
+    const note = n === null
+      ? (L.notMeasuredReason && L.notMeasuredReason[label]) || String(basis.note || '').replace(/^not measured:\s*/, '')
+      : (basis.counted ? L.basisNote(basis) : basis.note || '');
+    return `<div class="score"><div class="label">${esc(shown)}</div><div class="score-row">${num}<span class="score-note">${esc(note)}</span></div></div>`;
   }).join('');
   let n = 1;
   const pages = [];
-  pages.push(`<div class="page"><div class="cover"><div><div class="cover-top"><div class="eyebrow">Digital marketing audit</div><h1>SEO, AEO and GEO<br>audit report</h1><p class="cover-sub">${t(a.client.subject)}</p><span class="cover-url">${esc(a.meta.host)}</span></div>
-    <dl class="cover-meta"><div><dt>Audit subject</dt><dd>${t(a.client.name)}</dd></div><div><dt>Report date</dt><dd>${esc(a.client.reportDate)}</dd></div><div><dt>Audit type</dt><dd>${esc(a.meta.auditType)}</dd></div><div><dt>Prepared by</dt><dd>${esc(a.client.preparedBy || 'OperStack')}</dd></div></dl></div>
-    <div class="cover-foot">Public signals were collected by ${esc(a.meta.tool)} on ${esc((a.meta.collectedAt || '').slice(0, 10))}. Every status in this report can be reproduced from the site as it stood on that day.</div></div></div>`);
+  pages.push(`<div class="page"><div class="cover"><div><div class="cover-top"><div class="eyebrow">${L.eyebrowAudit}</div><h1>${L.coverTitle}</h1><p class="cover-sub">${t(a.client.subject)}</p><span class="cover-url">${esc(a.meta.host)}</span></div>
+    <dl class="cover-meta"><div><dt>${L.auditSubject}</dt><dd>${t(a.client.name)}</dd></div><div><dt>${L.reportDate}</dt><dd>${esc(a.client.reportDate)}</dd></div><div><dt>${L.auditType}</dt><dd>${esc(a.meta.auditType)}</dd></div><div><dt>${L.preparedBy}</dt><dd>${esc(a.client.preparedBy || 'OperStack')}</dd></div></dl></div>
+    <div class="cover-foot">${esc(L.collectedBy(a.meta.tool, (a.meta.collectedAt || '').slice(0, 10)))}</div></div></div>`);
   n++;
-  pages.push(`<div class="page">${header(a, 'Executive summary')}<div class="eyebrow">01 · Summary</div><h2>Executive summary</h2><p class="lead">${t(a.summary.lead)}</p><div class="scorecard">${scoreCards}</div><p class="scorecard-foot">Each score counts the checks in this report: a check that passes scores one, a check that needs attention a half, a failing check nothing. An area marked <strong>not measured</strong> is an area this audit does not test, and is never scored on an impression. Every figure here can be recomputed from section 04 onwards.</p><div class="verdict"><p><strong>Key takeaway:</strong> ${t(a.summary.verdict)}</p></div><h3>Three priorities</h3>${olist(a.summary.priorities)}${footer(a, n++)}</div>`);
-  pages.push(`<div class="page">${header(a, 'Site overview')}<div class="eyebrow">02 · Overview</div><h2>What the site is</h2><table><tr><th>Parameter</th><th>Value</th></tr>${(a.overview.rows || []).map(([k, v]) => `<tr><td>${t(k)}</td><td>${t(v)}</td></tr>`).join('')}</table><p>${t(a.overview.note)}</p><h3>Pages sampled</h3><table><tr><th>URL</th><th>Title</th><th>Words</th><th>H1</th><th>Alt</th></tr>${(a.sample || []).filter((p) => p.title !== undefined).slice(0, 14).map((p) => `<tr><td><code>${esc(new URL(p.url).pathname)}</code></td><td>${esc(p.title)}</td><td>${p.words}</td><td>${p.h1Count}</td><td>${p.images ? `${p.images - p.imagesNoAlt}/${p.images}` : '·'}</td></tr>`).join('')}</table>${footer(a, n++)}</div>`);
+  pages.push(`<div class="page">${header(a, L.secSummary, L)}<div class="eyebrow">${L.summaryEyebrow}</div><h2>${L.secSummary}</h2><p class="lead">${t(a.summary.lead)}</p><div class="scorecard">${scoreCards}</div><p class="scorecard-foot">${L.scorecardFoot}</p><div class="verdict"><p><strong>${L.keyTakeaway}</strong> ${t(a.summary.verdict)}</p></div><h3>${L.threePriorities}</h3>${olist(a.summary.priorities)}${footer(a, n++)}</div>`);
+  pages.push(`<div class="page">${header(a, L.secOverview, L)}<div class="eyebrow">${L.overviewEyebrow}</div><h2>${L.whatSiteIs}</h2><table><tr><th>${L.parameter}</th><th>${L.value}</th></tr>${(a.overview.rows || []).map(([k, v]) => `<tr><td>${t(k)}</td><td>${t(v)}</td></tr>`).join('')}</table><p>${t(a.overview.note)}</p><h3>${L.pagesSampled}</h3><table><tr><th>${L.colUrl}</th><th>${L.colTitle}</th><th>${L.colWords}</th><th>H1</th><th>Alt</th></tr>${(a.sample || []).filter((p) => p.title !== undefined).slice(0, 14).map((p) => `<tr><td><code>${esc(new URL(p.url).pathname)}</code></td><td>${esc(p.title)}</td><td>${p.words}</td><td>${p.h1Count}</td><td>${p.images ? `${p.images - p.imagesNoAlt}/${p.images}` : '·'}</td></tr>`).join('')}</table>${footer(a, n++)}</div>`);
   const cardBody = (c) => [
     c.text ? `<p>${t(c.text)}</p>` : '',
-    c.cost ? `<p><span class="card-tag">What it costs</span>${t(c.cost)}</p>` : '',
-    c.fix ? `<p><span class="card-tag">Fix</span>${t(c.fix)}</p>` : '',
-  ].join('') || '<p class="card-empty">This issue has no description in the audit file.</p>';
-  const cards = (a.critical || []).map((c, i) => `<div class="card ${c.level === 'warn' ? 'warn' : ''}"><h4>${i + 1}. ${t(c.title)}</h4>${cardBody(c)}</div>`).join('') || '<p>No critical defects were found in the public signals.</p>';
-  pages.push(`<div class="page">${header(a, 'Critical issues')}<div class="eyebrow">03 · P0</div><h2>Critical issues, fix first</h2><div class="cards">${cards}</div>${footer(a, n++)}</div>`);
-  const techRows = [...checksBy('technical'), ...checksBy('onpage')].map((c) => `<tr><td>${esc(c.label)}</td>${statusCell(c.status)}<td>${esc(c.value)}${c.comment ? `<br><span style="color:var(--muted)">${esc(c.comment)}</span>` : ''}</td></tr>`).join('');
-  pages.push(`<div class="page">${header(a, 'Technical SEO')}<div class="eyebrow">04 · Technical</div><h2>Technical and on-page checklist</h2><table><tr><th>Check</th><th>Status</th><th>Finding</th></tr>${techRows}</table>${footer(a, n++)}</div>`);
-  pages.push(`<div class="page">${header(a, 'Content and on-page')}<div class="eyebrow">05 · Content</div><h2>Content and on-page SEO</h2><div class="two-col"><div><h3>Strengths</h3>${list(a.content.strengths)}</div><div><h3>Weaknesses</h3>${list(a.content.weaknesses)}</div></div><h3>Structural gaps: pages that do not exist yet</h3>${list(a.content.gaps)}${checksBy('content').length ? `<table><tr><th>Check</th><th>Status</th><th>Finding</th></tr>${checksBy('content').map((c) => `<tr><td>${esc(c.label)}</td>${statusCell(c.status)}<td>${esc(c.value)}</td></tr>`).join('')}</table>` : ''}${footer(a, n++)}</div>`);
-  const geoRows = [...checksBy('aeo'), ...checksBy('geo')].map((c) => `<tr><td>${esc(c.label)}</td>${statusCell(c.status)}<td>${esc(c.value)}${c.comment ? `. ${esc(c.comment.charAt(0).toUpperCase() + c.comment.slice(1))}` : ''}</td></tr>`).join('') + (a.geo.rows || []).map(([k, s, d]) => `<tr><td>${t(k)}</td><td>${t(s)}</td><td>${t(d)}</td></tr>`).join('');
-  pages.push(`<div class="page">${header(a, 'AEO and GEO')}<div class="eyebrow">06 · AEO / GEO</div><h2>Answer engines: AEO</h2><p class="lead">Whether the site's answers can be lifted into "People also ask", AI overviews, ChatGPT and Perplexity.</p><div class="two-col"><div><h3>What already works</h3>${list(a.aeo.works)}</div><div><h3>What blocks the wins</h3>${list(a.aeo.blocks)}</div></div><div class="callout"><p><strong>Recommendation:</strong> ${t(a.aeo.recommendation)}</p></div><h2>Generative engines: GEO</h2><table><tr><th>Signal</th><th>Status</th><th>Detail</th></tr>${geoRows}</table><div class="callout"><p>${t(a.geo.callout)}</p></div>${footer(a, n++)}</div>`);
-  const checkTable = (g) => (checksBy(g).length ? `<table><tr><th>Check</th><th>Status</th><th>Finding</th></tr>${checksBy(g).map((c) => `<tr><td>${esc(c.label)}</td>${statusCell(c.status)}<td>${esc(c.value)}${c.comment ? `<br><span style="color:var(--muted)">${esc(c.comment)}</span>` : ''}</td></tr>`).join('')}</table>` : '');
-  pages.push(`<div class="page">${header(a, 'Off-page, conversion, limitations')}<div class="eyebrow">07 · Off-page</div><h2>Off-page and trust</h2>${checkTable('offpage')}${list(a.offpage.listed)}<p>${t(a.offpage.note)}</p><div class="eyebrow" style="margin-top:8mm">08 · Conversion</div><h2>Conversion and UX</h2>${checkTable('conversion')}<table><tr><th>Element</th><th>Status</th></tr>${(a.conversion.rows || []).map(([k, v]) => `<tr><td>${t(k)}</td><td>${t(v)}</td></tr>`).join('')}</table><div class="eyebrow" style="margin-top:8mm">09 · Limitations</div><h2>Where the data comes from</h2>${(a.sources || []).length ? `<table><tr><th>Source</th><th>Access</th><th>What was read</th></tr>${a.sources.map((s) => `<tr><td>${t(s.name)}</td><td>${t(s.access)}</td><td>${t(s.detail)}</td></tr>`).join('')}</table><p class="scorecard-foot">Every score in this report is computed from sources marked free. Nothing that costs money is counted in a score, so you can re-run this audit yourself and get the same numbers.</p>` : ''}<h3>Limitations</h3>${list(a.limitations)}${footer(a, n++)}</div>`);
+    c.cost ? `<p><span class="card-tag">${L.whatItCosts}</span>${t(c.cost)}</p>` : '',
+    c.fix ? `<p><span class="card-tag">${L.theFix}</span>${t(c.fix)}</p>` : '',
+  ].join('') || '<p class="card-empty">${L.noBody}</p>';
+  const cards = (a.critical || []).map((c, i) => `<div class="card ${c.level === 'warn' ? 'warn' : ''}"><h4>${i + 1}. ${t(c.title)}</h4>${cardBody(c)}</div>`).join('') || `<p>${L.noCritical}</p>`;
+  pages.push(`<div class="page">${header(a, L.secCritical, L)}<div class="eyebrow">${L.criticalEyebrow}</div><h2>${L.criticalTitle}</h2><div class="cards">${cards}</div>${footer(a, n++)}</div>`);
+  const techRows = [...checksBy('technical'), ...checksBy('onpage')].map((c) => `<tr><td>${esc(c.label)}</td>${statusCell(c.status, L)}<td>${esc(c.value)}${c.comment ? `<br><span style="color:var(--muted)">${esc(c.comment)}</span>` : ''}</td></tr>`).join('');
+  pages.push(`<div class="page">${header(a, L.secTechnical, L)}<div class="eyebrow">${L.technicalEyebrow}</div><h2>${L.technicalTitle}</h2><table><tr><th>${L.colCheck}</th><th>${L.colStatus}</th><th>${L.colFinding}</th></tr>${techRows}</table>${footer(a, n++)}</div>`);
+  pages.push(`<div class="page">${header(a, L.secContent, L)}<div class="eyebrow">${L.contentEyebrow}</div><h2>${L.contentTitle}</h2><div class="two-col"><div><h3>${L.strengths}</h3>${list(a.content.strengths)}</div><div><h3>${L.weaknesses}</h3>${list(a.content.weaknesses)}</div></div><h3>${L.gaps}</h3>${list(a.content.gaps)}${checksBy('content').length ? `<table><tr><th>${L.colCheck}</th><th>${L.colStatus}</th><th>${L.colFinding}</th></tr>${checksBy('content').map((c) => `<tr><td>${esc(c.label)}</td>${statusCell(c.status, L)}<td>${esc(c.value)}</td></tr>`).join('')}</table>` : ''}${footer(a, n++)}</div>`);
+  const geoRows = [...checksBy('aeo'), ...checksBy('geo')].map((c) => `<tr><td>${esc(c.label)}</td>${statusCell(c.status, L)}<td>${esc(c.value)}${c.comment ? `. ${esc(c.comment.charAt(0).toUpperCase() + c.comment.slice(1))}` : ''}</td></tr>`).join('') + (a.geo.rows || []).map(([k, s, d]) => `<tr><td>${t(k)}</td><td>${t(s)}</td><td>${t(d)}</td></tr>`).join('');
+  pages.push(`<div class="page">${header(a, L.secAeo, L)}<div class="eyebrow">${L.aeoEyebrow}</div><h2>${L.aeoTitle}</h2><p class="lead">Whether the site's answers can be lifted into "People also ask", AI overviews, ChatGPT and Perplexity.</p><div class="two-col"><div><h3>${L.aeoWorks}</h3>${list(a.aeo.works)}</div><div><h3>${L.aeoBlocks}</h3>${list(a.aeo.blocks)}</div></div><div class="callout"><p><strong>${L.recommendation}</strong> ${t(a.aeo.recommendation)}</p></div><h2>${L.geoTitle}</h2><table><tr><th>${L.colSignal}</th><th>${L.colStatus}</th><th>${L.colDetail}</th></tr>${geoRows}</table><div class="callout"><p>${t(a.geo.callout)}</p></div>${footer(a, n++)}</div>`);
+  const checkTable = (g) => (checksBy(g).length ? `<table><tr><th>${L.colCheck}</th><th>${L.colStatus}</th><th>${L.colFinding}</th></tr>${checksBy(g).map((c) => `<tr><td>${esc(c.label)}</td>${statusCell(c.status, L)}<td>${esc(c.value)}${c.comment ? `<br><span style="color:var(--muted)">${esc(c.comment)}</span>` : ''}</td></tr>`).join('')}</table>` : '');
+  pages.push(`<div class="page">${header(a, L.secOffpage, L)}<div class="eyebrow">${L.offpageEyebrow}</div><h2>${L.offpageTitle}</h2>${checkTable('offpage')}${list(a.offpage.listed)}<p>${t(a.offpage.note)}</p><div class="eyebrow" style="margin-top:8mm">${L.conversionEyebrow}</div><h2>${L.conversionTitle}</h2>${checkTable('conversion')}<table><tr><th>${L.colElement}</th><th>${L.colStatus}</th></tr>${(a.conversion.rows || []).map(([k, v]) => `<tr><td>${t(k)}</td><td>${t(v)}</td></tr>`).join('')}</table><div class="eyebrow" style="margin-top:8mm">${L.limitationsEyebrow}</div><h2>${L.sourcesTitle}</h2>${(a.sources || []).length ? `<table><tr><th>${L.colSource}</th><th>${L.colAccess}</th><th>${L.colWhatRead}</th></tr>${a.sources.map((s) => `<tr><td>${t(s.name)}</td><td>${t(s.access)}</td><td>${t(s.detail)}</td></tr>`).join('')}</table><p class="scorecard-foot">${L.sourcesFoot}</p>` : ''}<h3>${L.limitations}</h3>${list(a.limitations)}${footer(a, n++)}</div>`);
   const phases = (a.roadmap || []).map((p) => `<div class="phase"><div class="phase-head"><span class="badge">${esc(p.badge)}</span><span class="phase-title">${t(p.title)}</span></div>${olist(p.items)}</div>`).join('');
-  pages.push(`<div class="page">${header(a, 'Roadmap')}<div class="eyebrow">10 · Roadmap</div><h2>Work plan: priorities and timeline</h2>${phases}<div class="verdict"><p><strong>Key message:</strong> ${t(a.closing)}</p></div>${footer(a, n++)}</div>`);
+  pages.push(`<div class="page">${header(a, L.secRoadmap, L)}<div class="eyebrow">${L.roadmapEyebrow}</div><h2>${L.roadmapTitle}</h2>${phases}<div class="verdict"><p><strong>${L.keyMessage}</strong> ${t(a.closing)}</p></div>${footer(a, n++)}</div>`);
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${esc(a.client.name)}: SEO, AEO and GEO audit</title><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono&display=swap"><style>${css()}</style></head><body>${pages.join('\n')}</body></html>`;
 }
 
