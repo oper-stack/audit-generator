@@ -17,7 +17,9 @@ Everything an external auditor can see without Search Console or analytics acces
 - llms.txt: present, text or HTML, and whether its links point at the site or somewhere else.
 - The homepage and a sample of pages from the sitemap: title and description lengths, shortcodes or encoded data in the description, H1 count, alt coverage, canonical, robots meta, viewport (zoom blocked), Open Graph and Twitter cards, JSON-LD types (FAQPage, Organization and business types), script and stylesheet counts, hreflang, exposed dates, word counts, duplicate titles, thin pages, utility pages in the index, and on WordPress the xmlrpc endpoint.
 
-Every finding becomes a row with a status (`ok`, `warn`, `bad`, `na`), a value and a comment. `bad` rows are copied into the critical-issues page automatically. Scores per group are suggested from the statuses; the analyst can overwrite them.
+Every finding becomes a row with a status (`ok`, `warn`, `bad`, `na`), a value and a comment. `bad` rows are copied into the critical-issues page automatically.
+
+**Scores are computed, never typed.** The six area scores on page 2 are rendered from the checks each time the report is built: a check that passes counts one, a check that needs attention a half, a failing check nothing, and `na` is ignored. A number written by hand into `audit.json` is ignored and named by `operstack-audit check`. The two areas this audit does not measure, Off-page and trust and Conversion and UX, are printed as **not measured** rather than scored: nothing here rests on an impression. Each card also shows the count it came from, so a reader can recompute it from the checklist.
 
 ## What the analyst writes
 
