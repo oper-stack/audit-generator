@@ -69,6 +69,18 @@ Every open check is sorted into one of three buckets by whose knowledge it needs
 
 Both read the language from the audit: a Russian letter translates the check names itself, and an English letter over a Russian audit is refused rather than sent half-translated.
 
+## The Foundation package: pricing the writing
+
+Fix closes what needs no knowledge of the business. Everything else is text, and text is priced per page.
+
+```
+npx @operstack/audit foundation-scope audit.json --lang en --new-pages 3
+```
+
+Each sampled page is read for five things: does it open with an answer carrying a figure, are the figures sourced, is it broken into sections, does it carry a table worth quoting, and is there enough of it at all. A page needing one edit is one share of work, two or three defects is two, four or more (or an empty page) is three, and a page that does not exist yet is three. Shares times the unit price, lifted to the package minimum.
+
+Utility pages are excluded and counted separately: nobody rewrites a privacy policy to open with a figure. Sources are asked for only where the page actually carries figures. Without Search Console access the scope is built on a sitemap sample, and the letter says so rather than implying we picked the pages that matter.
+
 ## Example
 
 `examples/sample-audit.json` is a complete, fictional audit of "Example Villas". `npm run sample` renders it to HTML and PDF next to the JSON.

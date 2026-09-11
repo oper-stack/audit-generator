@@ -123,13 +123,16 @@ function analysePage(url, html) {
   // somebody else's site sitting in the same paragraph as the figure it backs.
   const sourcePhrases = (text.match(/\b(according to|source:|sources:|data from|reported by|published by|registry|statistics office|central bank)\b/gi) || []).length;
   const ownHostname = (() => { try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return ''; } })();
+  // Абзацы, в которых вообще есть цифра. Без этого счётчика «цифры без источника» вменяется
+  // странице, где цифр нет ни одной, например политике конфиденциальности.
+  const figureParagraphs = (bodyHtml.match(/<p[^>]*>[\s\S]*?<\/p>/gi) || []).filter((para) => /\d/.test(plain(para))).length;
   const citedParagraphs = (bodyHtml.match(/<p[^>]*>[\s\S]*?<\/p>/gi) || []).filter((para) => {
     if (!/\d/.test(plain(para))) return false;
     return [...para.matchAll(/<a[^>]+href=["'](https?:\/\/[^"']+)["']/gi)].some((m) => {
       try { return new URL(m[1]).hostname.replace(/^www\./, '') !== ownHostname; } catch { return false; }
     });
   }).length;
-  return { url, title, citedParagraphs, titleLength: title.length, description, descriptionLength: description.length, descriptionGarbage: shortcode, h1Count: h1s.length, h1: h1s[0] || '', images: imgs.length, imagesNoAlt: imgsNoAlt, canonical, robots, viewport, og, twitter, generator, hreflang, scripts, stylesheets, schemaTypes: [...new Set(schemaTypes)], words, links, dates, firstPara: firstPara.slice(0, 220), firstParaWords, answerFirst, h2Count, tables, sourcePhrases , telLinks, mailLinks, messengerLinks, contactPages, forms: realForms.length, formFields, formDepth, ctaFirstScreen, trust };
+  return { url, title, citedParagraphs, figureParagraphs, titleLength: title.length, description, descriptionLength: description.length, descriptionGarbage: shortcode, h1Count: h1s.length, h1: h1s[0] || '', images: imgs.length, imagesNoAlt: imgsNoAlt, canonical, robots, viewport, og, twitter, generator, hreflang, scripts, stylesheets, schemaTypes: [...new Set(schemaTypes)], words, links, dates, firstPara: firstPara.slice(0, 220), firstParaWords, answerFirst, h2Count, tables, sourcePhrases , telLinks, mailLinks, messengerLinks, contactPages, forms: realForms.length, formFields, formDepth, ctaFirstScreen, trust };
 }
 
 async function readSitemap(url, seen = new Set(), depth = 0) {
@@ -347,7 +350,9 @@ export async function collect(startUrl, { pages = 20, log = () => {}, backlinks 
       { badge: 'Months 2 to 3', title: 'Organic growth, AEO and GEO', items: ['{{content clusters, schema, PR, reviews}}'] },
     ],
     closing: '{{Key message for the client in three sentences.}}',
-    sample: sample.map((p) => p.title !== undefined ? { url: p.url, title: p.title, words: p.words, h1Count: p.h1Count, images: p.images, imagesNoAlt: p.imagesNoAlt, schemaTypes: p.schemaTypes } : p),
+    // В выборке остаётся и то, из чего считается работа с текстами: без этих полей пакет
+    // Foundation пришлось бы оценивать на глаз, как раньше оценивался Fix.
+    sample: sample.map((p) => p.title !== undefined ? { url: p.url, title: p.title, words: p.words, h1Count: p.h1Count, images: p.images, imagesNoAlt: p.imagesNoAlt, schemaTypes: p.schemaTypes, answerFirst: p.answerFirst, sourcePhrases: p.sourcePhrases, citedParagraphs: p.citedParagraphs, figureParagraphs: p.figureParagraphs, h2Count: p.h2Count, tables: p.tables, firstParaWords: p.firstParaWords, dates: p.dates } : p),
     notes,
   };
 }

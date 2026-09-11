@@ -12,6 +12,8 @@
  *       in the buyer's language; the price defaults to 249 USD in English and 21000 RUB in Russian
  *   operstack-audit fix-report audit-fix-plan.json after.json
  *       what was closed, what was not, and how much to refund
+ *   operstack-audit foundation-scope audit.json [--lang ru|en] [--new-pages 3] [--gsc]
+ *       the text work the Foundation package would do, page by page, with the price it adds up to
  *   operstack-audit check audit.json
  *       lists narrative fields still holding placeholders and any score the checks do not support
  *
@@ -20,6 +22,7 @@
  */
 import { collect, verifyScores } from '../src/collect.mjs';
 import { buildFixPlan, renderFixPlan, renderFixChecklist, buildFixReport, renderFixReport } from '../src/fix.mjs';
+import { buildFoundationScope, renderFoundationScope, renderFoundationChecklist } from '../src/foundation.mjs';
 import { render, checkNarrative } from '../src/render.mjs';
 import { writeFileSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -85,4 +88,26 @@ if (cmd === 'collect') {
   writeFileSync(out, renderFixReport(report));
   console.log(`closed ${report.closed.length} of ${report.total}, still open ${report.stillOpen.length}, refund ${report.refund} ${report.currency}`);
   console.log(`wrote ${out}`);
+} else if (cmd === 'foundation-scope') {
+  const audit = JSON.parse(readFileSync(resolve(target), 'utf8'));
+  const lang = opt('--lang', 'ru') === 'en' ? 'en' : 'ru';
+  if (!(audit.sample || []).some((p) => p.answerFirst !== undefined)) {
+    console.error('this audit was collected before the text fields were kept in the sample: re-run collect to scope Foundation');
+    process.exit(1);
+  }
+  const scope = buildFoundationScope(audit, {
+    lang,
+    newPages: Number(opt('--new-pages', 0)),
+    hasSearchConsole: has("--gsc"),
+    unit: opt('--unit') ? Number(opt('--unit')) : undefined,
+    minimum: opt('--minimum') ? Number(opt('--minimum')) : undefined,
+    currency: opt('--currency'),
+  });
+  const base = opt('--out', target.replace(/\.json$/, ''));
+  writeFileSync(resolve(`${base}-foundation-scope.json`), JSON.stringify(scope, null, 2));
+  writeFileSync(resolve(`${base}-foundation-letter.md`), renderFoundationScope(scope));
+  writeFileSync(resolve(`${base}-foundation-checklist.md`), renderFoundationChecklist(scope));
+  console.log(`${scope.pages.length} page(s) need text work of ${scope.sampledPages} sampled, ${scope.shares} share(s)`);
+  console.log(`price ${scope.price} ${scope.currency}${scope.atMinimum ? ` (raw ${scope.raw}, lifted to the package minimum)` : ''}`);
+  console.log(`wrote ${base}-foundation-scope.json, ${base}-foundation-letter.md, ${base}-foundation-checklist.md`);
 } else { console.error(`unknown command ${cmd}`); process.exit(2); }
