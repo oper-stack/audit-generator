@@ -25,10 +25,21 @@ is('ok 1, warn 0.5, bad 0, na ignored', scores['SEO, technical'], 8);
 is('an area with half its checks failing scores 5', scores['AEO, answers and snippets'], 5);
 is('na is not counted', scoreBasis['SEO, technical'].counted, 3);
 is('an area with no checks is not measured', scores['Off-page and trust'], null);
-is('and says why', scoreBasis['Off-page and trust'].note, 'not measured: no backlink or mention tool is used in this audit');
+is('and says why', scoreBasis['Off-page and trust'].note, 'not measured: this audit collected no check in this area');
 is('conversion is not measured either', scores['Conversion and UX'], null);
 is('every area is accounted for', Object.keys(scores).length, SCORE_AREAS.length);
 is('the basis is printable evidence', scoreBasis['AEO, answers and snippets'].note, '1 of 2 checks pass, 1 fails');
+
+// an area is scored as soon as its checks are collected, and only then
+const withOffpage = computeScores([
+  ...checks,
+  { group: 'offpage', status: 'ok' }, { group: 'offpage', status: 'warn' }, { group: 'offpage', status: 'na' },
+  { group: 'conversion', status: 'bad' }, { group: 'conversion', status: 'ok' },
+]);
+is('off-page is scored from its own checks', withOffpage.scores['Off-page and trust'], 8);
+is('and the na row is not counted', withOffpage.scoreBasis['Off-page and trust'].counted, 2);
+is('conversion is scored from its own checks', withOffpage.scores['Conversion and UX'], 5);
+is('an area with checks is never "not measured"', withOffpage.scoreBasis['Conversion and UX'].note, '1 of 2 checks pass, 1 fails');
 
 const typed = { checks, scores: { 'SEO, technical': 2, 'Off-page and trust': 6, 'Made-up area': 9 } };
 const problems = verifyScores(typed);
