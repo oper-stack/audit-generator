@@ -46,6 +46,29 @@ An agent can fill these fields from the JSON: the Claude Code plugin `operstack-
 
 Ten A4 pages: cover, executive summary with a scorecard, site overview with the sampled pages, critical issues, technical and on-page checklist, content and structure, AEO and GEO, off-page and conversion and limitations, roadmap in three phases, closing message. HTML always; PDF with `--pdf` when Chrome or Chromium is installed (`CHROME_PATH` overrides the lookup).
 
+## The Fix package: turning findings into agreed work
+
+An audit says what is wrong. `fix-plan` says what we will do about it, before anyone pays.
+
+```
+npx @operstack/audit fix-plan audit.json --lang en --platform files --price 249
+npx @operstack/audit fix-report audit-fix-plan.json after.json
+```
+
+Every open check is sorted into one of three buckets by whose knowledge it needs, not by how hard it is:
+
+| Bucket | Meaning |
+|---|---|
+| We close it | Standard work: markup, redirects, robots, sitemap, titles, contact paths. |
+| We need your facts | Text work: an answer-first paragraph, the source behind a figure, thin pages. Foundation does this, priced separately. |
+| Not promised | Out of our hands (TLS, hosting response time) or behind paid data (link profile). Never charged for. |
+
+`fix-plan` writes three files: the plan as JSON, a letter the client agrees to before paying, and a checklist for whoever does the work. The price is divided by the number of checks in the list, so one unclosed check has a known refund. `--platform cms` moves the checks that need source access out of the list instead of promising them on a hosted site builder. When fewer than five checks are left to close, the letter says plainly that the package is poor value here and points at the alternative.
+
+`fix-report` re-runs the comparison after the work: what closed, what did not, and the exact sum to refund. A check that vanished from the later run counts as not closed.
+
+Both read the language from the audit: a Russian letter translates the check names itself, and an English letter over a Russian audit is refused rather than sent half-translated.
+
 ## Example
 
 `examples/sample-audit.json` is a complete, fictional audit of "Example Villas". `npm run sample` renders it to HTML and PDF next to the JSON.

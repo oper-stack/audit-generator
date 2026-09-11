@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.6.0
+
+### Added
+- **The Fix package has a process, not just a price.** `fix-plan` reads an audit and splits every open check into what we close ourselves, what needs the client's own facts, and what we do not promise at all, with a named action for each of the 44 checks the collector can raise. It writes the plan as JSON, a letter the client agrees to before paying, and a checklist for the executor.
+- **The refund is arithmetic, not a judgement call.** The price is divided by the number of checks in the agreed list, so an unclosed check has a known share. `fix-report` compares a later run against the plan and prints what closed, what did not, and the sum to refund. A check missing from the later run counts as not closed.
+- **`--platform cms`** moves the checks that need source access into "not promised" instead of promising them on a hosted site builder.
+- **Both letters exist in both languages.** `--lang ru|en` writes the client letter, the checklist and the report in the buyer's language; the price defaults to 249 USD in English and 21000 RUB in Russian. A Russian letter translates the check names from an English audit itself; an English letter over a Russian audit is refused, because half-translated is worse than re-collecting.
+- **The letter argues against the sale when the sale is poor.** Below five closable checks it says so and points at the alternative; with none it says there is nothing to buy.
+
+### Note
+- 42 tests in `src/test-fix.mjs`, including a coverage test asserting every check id a real audit produces has a fix action. Nothing in the collector or the renderer was touched.
+
 ## 0.5.0
 
 ### Added
