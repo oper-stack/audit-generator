@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.0
+
+### Added
+- **Off-page and trust is measured**, from the site alone and for free: a postal address in the structured data, published phone and email, `sameAs` profiles claimed on other hosts, an about page, privacy and terms.
+- **Conversion is measured**, also from the site alone: whether every page offers a way to get in touch, whether a call to action sits in the first screen, how far down the first form sits, how many fields it asks for, whether a messenger link exists. Behaviour still needs analytics; the contact path does not.
+- Section 09 of the report is now a **sources table**: every source, whether it is free, needs a free account, or costs money, and what was read from it.
+- `--backlinks links.json` passes a backlink profile in from any tool.
+
+### Changed
+- **No number that costs money moves a score.** Backlink data is printed as a note and counted in nothing, so anyone can re-run the audit for free and get the same figures. Search Console and Bing Webmaster are free but need the owner's own account, so they feed the narrative and no score.
+- A `sameAs` pointing at the audited site itself is no longer counted as a profile somewhere else.
+
 ## 0.2.0
 
 ### Fixed

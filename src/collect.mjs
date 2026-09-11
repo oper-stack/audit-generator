@@ -65,6 +65,35 @@ function analysePage(url, html) {
   const ld = root.querySelectorAll('script[type="application/ld+json"]').map((x) => x.text).join('\n');
   const dates = { published: attr('meta[property="article:published_time"]', 'content') || (ld.match(/"datePublished"\s*:\s*"([^"]+)"/) || [])[1] || '', modified: attr('meta[property="article:modified_time"]', 'content') || (ld.match(/"dateModified"\s*:\s*"([^"]+)"/) || [])[1] || '' };
   const shortcode = /\[[a-z_-]+ [^\]]*\]/i.test(description) || /^[A-Za-z0-9+/=]{40,}$/.test(description);
+  // Conversion path, read from the page itself. No analytics is needed to see whether a visitor
+  // who wants to talk to this business can find a way to do it, and how far down it is.
+  const bodyInner = body?.innerHTML || html;
+  const CONTACT_INTENT = /contact|enquir|inquir|get in touch|request a|book a|call us|consult|get a quote|free quote|связ|заяв|консульт|оставить/i;
+  const hrefsLower = links.map((h) => h.toLowerCase());
+  const telLinks = hrefsLower.filter((h) => h.startsWith('tel:')).length;
+  const mailLinks = hrefsLower.filter((h) => h.startsWith('mailto:')).length;
+  const messengerLinks = hrefsLower.filter((h) => /(wa\.me|api\.whatsapp\.com|t\.me\/|telegram\.me|m\.me\/|viber:|signal\.me)/.test(h)).length;
+  const contactPages = hrefsLower.filter((h) => /\/(contact|contacts|contact-us|kontakt|svyaz|contacto)\/?($|[?#])/.test(h)).length;
+  const formEls = root.querySelectorAll('form');
+  const realForms = formEls.filter((f) => !/search/i.test(`${f.getAttribute('class') || ''} ${f.getAttribute('id') || ''} ${f.getAttribute('role') || ''} ${f.getAttribute('action') || ''}`));
+  const firstForm = realForms[0] || null;
+  const formFields = firstForm ? firstForm.querySelectorAll('input, textarea, select').filter((i) => !/^(hidden|submit|button|image)$/i.test(i.getAttribute('type') || '')).length : 0;
+  const formAt = firstForm ? bodyInner.indexOf(firstForm.outerHTML.slice(0, 120)) : -1;
+  const formDepth = firstForm && formAt >= 0 && bodyInner.length ? Math.round((formAt / bodyInner.length) * 100) : null;
+  const firstScreen = bodyInner.slice(0, Math.max(1200, Math.round(bodyInner.length * 0.15)));
+  const ctaFirstScreen = (firstScreen.match(/<a[^>]*>[\s\S]*?<\/a>|<button[^>]*>[\s\S]*?<\/button>/gi) || [])
+    .some((el) => CONTACT_INTENT.test(el.replace(/<[^>]+>/g, ' ')) || CONTACT_INTENT.test(el));
+  // Trust signals a visitor and a rating system both look for, all of them public on the page.
+  const sameAs = [...ld.matchAll(/"sameAs"\s*:\s*(\[[^\]]*\]|"[^"]+")/g)].flatMap((m) => m[1].match(/https?:\/\/[^"\s,\]]+/g) || []);
+  const trust = {
+    postalAddress: /"(?:PostalAddress|streetAddress|addressLocality)"/.test(ld),
+    telephone: /"telephone"\s*:/.test(ld) || telLinks > 0,
+    email: /"email"\s*:/.test(ld) || mailLinks > 0,
+    sameAs: [...new Set(sameAs.map((u) => { try { return new URL(u).host.replace(/^www\./, ''); } catch { return ''; } }).filter(Boolean))],
+    aboutPage: hrefsLower.some((h) => /\/(about|about-us|our-story|team|company|o-nas)\/?($|[?#])/.test(h)),
+    policyPages: [...new Set(hrefsLower.filter((h) => /\/(privacy|privacy-policy|terms|terms-of-use|legal|cookie|cookies|disclaimer)/.test(h)).map((h) => (h.match(/\/(privacy|terms|legal|cookie|disclaimer)/) || [])[1]).filter(Boolean))],
+    author: /"author"\s*:/.test(ld),
+  };
   // Answer-first family, the same measures the free AI visibility check uses, so the two agree.
   // Site chrome is stripped, except a <header> that carries the H1: that is the article head, not chrome.
   const bodyHtml = (html.match(/<body[\s\S]*<\/body>/i) || [html])[0]
@@ -78,7 +107,7 @@ function analysePage(url, html) {
   const h2Count = (bodyHtml.match(/<h2[\s>]/gi) || []).length;
   const tables = (bodyHtml.match(/<table[\s>]/gi) || []).length;
   const sourcePhrases = (text.match(/\b(according to|source:|sources:|data from|reported by|published by|registry|statistics office|central bank)\b/gi) || []).length;
-  return { url, title, titleLength: title.length, description, descriptionLength: description.length, descriptionGarbage: shortcode, h1Count: h1s.length, h1: h1s[0] || '', images: imgs.length, imagesNoAlt: imgsNoAlt, canonical, robots, viewport, og, twitter, generator, hreflang, scripts, stylesheets, schemaTypes: [...new Set(schemaTypes)], words, links, dates, firstPara: firstPara.slice(0, 220), firstParaWords, answerFirst, h2Count, tables, sourcePhrases };
+  return { url, title, titleLength: title.length, description, descriptionLength: description.length, descriptionGarbage: shortcode, h1Count: h1s.length, h1: h1s[0] || '', images: imgs.length, imagesNoAlt: imgsNoAlt, canonical, robots, viewport, og, twitter, generator, hreflang, scripts, stylesheets, schemaTypes: [...new Set(schemaTypes)], words, links, dates, firstPara: firstPara.slice(0, 220), firstParaWords, answerFirst, h2Count, tables, sourcePhrases , telLinks, mailLinks, messengerLinks, contactPages, forms: realForms.length, formFields, formDepth, ctaFirstScreen, trust };
 }
 
 async function readSitemap(url, seen = new Set(), depth = 0) {
@@ -95,7 +124,8 @@ async function readSitemap(url, seen = new Set(), depth = 0) {
   return out;
 }
 
-export async function collect(startUrl, { pages = 20, log = () => {} } = {}) {
+export async function collect(startUrl, { pages = 20, log = () => {}, backlinks = null } = {}) {
+  const opts = { backlinks };
   const origin = new URL(startUrl).origin;
   const host = new URL(startUrl).host;
   const checks = [];
@@ -213,6 +243,47 @@ export async function collect(startUrl, { pages = 20, log = () => {} } = {}) {
   if (good.length > 2) checks.push(row('dates', 'content', 'Publication dates exposed', dated ? 'ok' : 'warn', dated ? `${dated} of ${good.length} sampled pages expose dates` : 'no article dates in the sample: answer engines cannot tell what is current'));
   if (/wordpress/i.test(hp?.generator || '')) { const x = await get(`${origin}/xmlrpc.php`, { method: 'HEAD' }); if (x.status === 405 || x.status === 200) checks.push(row('xmlrpc', 'technical', 'xmlrpc.php', 'warn', `answers ${x.status}`, 'pingback endpoint open: attack surface with no SEO value')); }
 
+  // ---- Off-page and trust ----------------------------------------------------------------
+  // Link data comes from Semrush when SEMRUSH_API_KEY is set. Without it the three link rows are
+  // reported as not measured and the area is still scored on the trust signals, which are free.
+  log('off-page and trust');
+  const pagesForTrust = hp ? [hp, ...good] : good;
+  const anyTrust = (f) => pagesForTrust.some(f);
+  const links = await semrushBacklinks(host, log, opts.backlinks || null);
+  if (links.ok) {
+    const followShare = links.total ? Math.round((links.follows / links.total) * 100) : 0;
+    checks.push(row('links-profile', 'offpage', 'Backlink profile (optional extra)', 'na', `${links.domains} referring domain(s), ${links.total} link(s), ${followShare}% follow, authority score ${links.ascore} of 100`, `${links.source}. A paid tool, not required for this report and not counted in any score.`));
+  }
+  const addr = anyTrust((p) => p.trust?.postalAddress);
+  checks.push(row('trust-entity', 'offpage', 'Who the business is, in machine-readable form', addr ? 'ok' : 'warn', addr ? 'a postal address is published in the structured data' : 'no postal address in the structured data', addr ? '' : 'rating systems and answer engines use it to tell one business from another'));
+  const tel = anyTrust((p) => p.trust?.telephone); const mail = anyTrust((p) => p.trust?.email);
+  checks.push(row('trust-contact', 'offpage', 'Direct contact details', tel && mail ? 'ok' : tel || mail ? 'warn' : 'bad', [tel ? 'phone' : '', mail ? 'email' : ''].filter(Boolean).join(' and ') || 'neither a phone nor an email is published'));
+  const ownHost = host.replace(/^www\./, '');
+  const profiles = [...new Set(pagesForTrust.flatMap((p) => p.trust?.sameAs || []))].filter((h) => h !== ownHost && !h.endsWith(`.${ownHost}`));
+  checks.push(row('trust-profiles', 'offpage', 'Profiles the site claims elsewhere', profiles.length >= 2 ? 'ok' : profiles.length ? 'warn' : 'bad', profiles.length ? `${profiles.length}: ${profiles.slice(0, 5).join(', ')}` : 'no sameAs links: the site claims no profile anywhere else', profiles.length ? '' : 'the cheapest off-site signal there is, and it is free'));
+  const about = anyTrust((p) => p.trust?.aboutPage);
+  checks.push(row('trust-about', 'offpage', 'A page that says who is behind the site', about ? 'ok' : 'warn', about ? 'linked from the sampled pages' : 'no about or team page is linked'));
+  const policies = [...new Set(pagesForTrust.flatMap((p) => p.trust?.policyPages || []))];
+  checks.push(row('trust-policies', 'offpage', 'Privacy and terms', policies.length >= 2 ? 'ok' : policies.length ? 'warn' : 'bad', policies.length ? policies.join(', ') : 'neither a privacy policy nor terms are linked'));
+
+  // ---- Conversion path -------------------------------------------------------------------
+  // Measured from the pages, not from analytics: whether a visitor who wants to talk can, and how
+  // far down the page the way to do it sits. Behaviour data, when the client grants it, adds to this.
+  const withForm = pagesForTrust.filter((p) => p.forms > 0);
+  const reachable = pagesForTrust.filter((p) => p.forms > 0 || p.telLinks || p.mailLinks || p.messengerLinks || p.contactPages);
+  checks.push(row('conv-contact-path', 'conversion', 'A way to get in touch', reachable.length === pagesForTrust.length ? 'ok' : reachable.length ? 'warn' : 'bad', `${reachable.length} of ${pagesForTrust.length} sampled page(s) offer a form, a contact link or a contact page`));
+  const withCta = pagesForTrust.filter((p) => p.ctaFirstScreen);
+  checks.push(row('conv-cta', 'conversion', 'A call to action in the first screen', withCta.length >= pagesForTrust.length * 0.8 ? 'ok' : withCta.length ? 'warn' : 'bad', `${withCta.length} of ${pagesForTrust.length} sampled page(s) put one in the first 15% of the page`, withCta.length === pagesForTrust.length ? '' : 'a reader who is convinced at the top should not have to hunt'));
+  const depths = withForm.map((p) => p.formDepth).filter((d) => d !== null && d !== undefined);
+  if (depths.length) {
+    const md = median(depths);
+    checks.push(row('conv-form-depth', 'conversion', 'How far down the form sits', md < 50 ? 'ok' : md < 80 ? 'warn' : 'bad', `median ${md}% of the way down the page, measured on ${depths.length} page(s)`, md >= 80 ? 'on a long page almost nobody scrolls that far, least of all on a phone' : ''));
+  } else checks.push(row('conv-form-depth', 'conversion', 'How far down the form sits', withForm.length ? 'na' : 'bad', withForm.length ? 'position could not be measured' : 'no form on the sampled pages'));
+  const fields = withForm.map((p) => p.formFields).filter((n) => n > 0);
+  if (fields.length) { const mf = median(fields); checks.push(row('conv-form-fields', 'conversion', 'What the form asks for', mf <= 4 ? 'ok' : mf <= 6 ? 'warn' : 'bad', `median ${mf} field(s) before a visitor can send anything`, mf > 4 ? 'every extra field costs replies, and a phone number costs the most' : '')); }
+  const msg = pagesForTrust.filter((p) => p.messengerLinks > 0);
+  checks.push(row('conv-messenger', 'conversion', 'A messenger link', msg.length ? 'ok' : 'warn', msg.length ? `on ${msg.length} of ${pagesForTrust.length} sampled page(s)` : 'none on the sampled pages', msg.length ? '' : 'for an international audience reading on a phone, one messenger link is usually worth more than a form'));
+
   const { scores, scoreBasis } = computeScores(checks);
   const critical = checks.filter((c) => c.status === 'bad').map((c) => ({ title: c.label, text: `${c.value}${c.comment ? `. ${c.comment}` : ''}`, level: 'bad' }));
 
@@ -230,6 +301,10 @@ export async function collect(startUrl, { pages = 20, log = () => {} } = {}) {
     geo: { rows: [['Entity clarity', '{{status}}', '{{detail}}'], ['Third-party mentions', '{{status}}', '{{detail}}'], ['Reviews and PR', '{{status}}', '{{detail}}']], callout: '{{Brand disambiguation note or the single biggest GEO risk.}}' },
     offpage: { listed: ['{{where the brand is already listed}}'], note: '{{One paragraph.}}' },
     conversion: { rows: [['Contact form', '{{status}}'], ['Price visible', '{{status}}'], ['Messengers', '{{status}}']] },
+    sources: [
+      { name: 'The site itself', access: 'Free, no account needed', detail: `robots.txt, the sitemaps, llms.txt, the homepage and ${good.length} sampled page(s), read exactly as any visitor reads them` },
+      ...(links.ok ? [{ name: links.source, access: 'Paid tool, optional', detail: 'reported for context only, not counted in any score' }] : []),
+    ],
     limitations: ['Google Search Console: no impressions, clicks or query data', 'Analytics: no traffic or behaviour data', 'Keyword and backlink tools: not used in the external tier'],
     roadmap: [
       { badge: 'Week 1', title: 'Critical, quick wins', items: critical.map((c) => `Fix: ${c.title}`).concat(['{{...}}']) },
@@ -240,6 +315,34 @@ export async function collect(startUrl, { pages = 20, log = () => {} } = {}) {
     sample: sample.map((p) => p.title !== undefined ? { url: p.url, title: p.title, words: p.words, h1Count: p.h1Count, images: p.images, imagesNoAlt: p.imagesNoAlt, schemaTypes: p.schemaTypes } : p),
     notes,
   };
+}
+
+
+/**
+ * Backlink profile from the Semrush analytics API, when SEMRUSH_API_KEY is in the environment.
+ * Every failure returns ok:false with the reason, which the report prints instead of a score.
+ */
+async function semrushBacklinks(host, log = () => {}, supplied = null) {
+  if (supplied) {
+    const need = ['ascore', 'total', 'domains'];
+    const missing = need.filter((k) => typeof supplied[k] !== 'number');
+    if (missing.length) return { ok: false, reason: `the supplied link data is missing ${missing.join(', ')}` };
+    return { ok: true, source: supplied.source || 'supplied link data', follows: supplied.follows ?? 0, nofollows: supplied.nofollows ?? 0, ...supplied };
+  }
+  const key = process.env.SEMRUSH_API_KEY;
+  if (!key) return { ok: false, reason: 'no link tool was used: no SEMRUSH_API_KEY and no link data supplied' };
+  const url = `https://api.semrush.com/analytics/v1/?key=${encodeURIComponent(key)}&type=backlinks_overview&target=${encodeURIComponent(host)}&target_type=root_domain&export_columns=ascore,total,domains_num,follows_num,nofollows_num`;
+  const r = await get(url, { timeout: 20000 });
+  if (!r.ok || /^ERROR/.test(r.text.trim())) {
+    const msg = (r.text || '').trim().slice(0, 120) || `HTTP ${r.status}`;
+    log(`  link data unavailable: ${msg}`);
+    return { ok: false, reason: /132/.test(msg) ? 'the link tool had no API units left this month' : `the link tool answered: ${msg}` };
+  }
+  const [head, line] = r.text.trim().split(/\r?\n/);
+  if (!line) return { ok: false, reason: 'the link tool returned no row for this domain' };
+  const cols = head.split(';'); const vals = line.split(';');
+  const n = (name) => Number(vals[cols.indexOf(name)] || 0);
+  return { ok: true, source: `Semrush Backlink Analytics, ${new Date().toISOString().slice(0, 10)}`, ascore: n('ascore'), total: n('total'), domains: n('domains_num'), follows: n('follows_num'), nofollows: n('nofollows_num') };
 }
 
 function median(a) { const s = [...a].sort((x, y) => x - y); return s.length ? s[Math.floor(s.length / 2)] : 0; }
@@ -254,8 +357,8 @@ export const SCORE_AREAS = [
   { label: 'SEO, content and structure', groups: ['onpage', 'content'] },
   { label: 'AEO, answers and snippets', groups: ['aeo'] },
   { label: 'GEO, visibility in AI systems', groups: ['geo'] },
-  { label: 'Off-page and trust', groups: [], reason: 'no backlink or mention tool is used in this audit' },
-  { label: 'Conversion and UX', groups: [], reason: 'no analytics or behaviour data was reviewed' },
+  { label: 'Off-page and trust', groups: ['offpage'] },
+  { label: 'Conversion and UX', groups: ['conversion'] },
 ];
 
 /**

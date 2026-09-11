@@ -2,7 +2,7 @@
 /**
  * OperStack audit generator.
  *
- *   operstack-audit collect https://example.com [--pages 20] [--out audit.json]
+ *   operstack-audit collect https://example.com [--pages 20] [--out audit.json] [--backlinks links.json]
  *       fetches the public signals (robots, sitemaps, llms.txt, sampled pages) and writes
  *       audit.json with every technical row filled and the narrative fields left for the analyst
  *   operstack-audit render audit.json [--out report.html] [--pdf]
@@ -23,12 +23,14 @@ const opt = (k, d) => { const i = rest.indexOf(k); return i === -1 ? d : rest[i 
 const has = (k) => rest.includes(k);
 
 if (!cmd || cmd === '--help' || cmd === '-h') {
-  console.log('Usage:\n  operstack-audit collect <url> [--pages 20] [--out audit.json]\n  operstack-audit render <audit.json> [--out report.html] [--pdf]\n  operstack-audit check <audit.json>');
+  console.log('Usage:\n  operstack-audit collect <url> [--pages 20] [--out audit.json] [--backlinks links.json]\n  operstack-audit render <audit.json> [--out report.html] [--pdf]\n  operstack-audit check <audit.json>');
   process.exit(cmd ? 0 : 2);
 }
 if (cmd === 'collect') {
   if (!/^https?:\/\//.test(target || '')) { console.error('collect needs an absolute URL'); process.exit(2); }
-  const audit = await collect(target, { pages: Number(opt('--pages', 20)), log: (m) => console.error(`  ${m}`) });
+  const backlinksFile = opt('--backlinks', '');
+  const backlinks = backlinksFile ? JSON.parse(readFileSync(resolve(backlinksFile), 'utf8')) : null;
+  const audit = await collect(target, { pages: Number(opt('--pages', 20)), backlinks, log: (m) => console.error(`  ${m}`) });
   const out = resolve(opt('--out', 'audit.json'));
   writeFileSync(out, JSON.stringify(audit, null, 2));
   console.log(`wrote ${out}: ${audit.checks.length} checks, ${audit.sample.length} pages sampled, scores ${Object.entries(audit.scores).map(([k, v]) => `${k} ${v === null ? 'not measured' : v}`).join(', ')}`);
