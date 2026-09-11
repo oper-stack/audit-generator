@@ -59,9 +59,22 @@ function analysePage(url, html) {
       walk(j);
     } catch { schemaTypes.push('(invalid JSON-LD)'); }
   }
+  // Служебная обвязка вырезается, кроме <header>, в котором стоит H1: это шапка статьи, а не сайта.
+  const bodyHtml = (html.match(/<body[\s\S]*<\/body>/i) || [html])[0]
+    .replace(/<(nav|footer|aside|script|style)[\s\S]*?<\/\1>/gi, ' ')
+    .replace(/<header[\s\S]*?<\/header>/gi, (block) => (/<h1[\s>]/i.test(block) ? block : ' '));
+  const plain = (x) => x.replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
+  const countWords = (x) => (x.match(/[\p{L}\p{N}][\p{L}\p{N}'’-]*/gu) || []).length;
   const body = root.querySelector('body');
-  const text = (body?.text ?? '').replace(/\s+/g, ' ').trim();
-  const words = (text.match(/[\p{L}\p{N}][\p{L}\p{N}'’-]*/gu) || []).length;
+  // Парсер иногда не находит body в большом или неаккуратном HTML и молча возвращает пустой текст,
+  // а пустой текст это приговор «страница пустая». Проверено на css-tricks.com: 178 КБ, body не
+  // найден, слов ноль при живых 978. Поэтому берём тот текст, которого больше: пустоту показывать
+  // клиенту нельзя, это ложное обвинение, за которое он ещё и заплатит в смете.
+  const parsedText = (body?.text ?? '').replace(/\s+/g, ' ').trim();
+  const text = countWords(parsedText) >= countWords(plain(bodyHtml)) ? parsedText : plain((html.match(/<body[\s\S]*<\/body>/i) || [html])[0].replace(/<(script|style)[\s\S]*?<\/\1>/gi, ' '));
+  // Слова считаем по содержимому без меню и подвала: иначе страница из одного абзаца в большом
+  // шаблоне выглядит на три тысячи слов и проверка на пустые страницы не значит ничего.
+  const words = countWords(plain(bodyHtml)) || countWords(text);
   const links = root.querySelectorAll('a[href]').map((a) => a.getAttribute('href') || '');
   const ld = root.querySelectorAll('script[type="application/ld+json"]').map((x) => x.text).join('\n');
   const dates = { published: attr('meta[property="article:published_time"]', 'content') || (ld.match(/"datePublished"\s*:\s*"([^"]+)"/) || [])[1] || '', modified: attr('meta[property="article:modified_time"]', 'content') || (ld.match(/"dateModified"\s*:\s*"([^"]+)"/) || [])[1] || '' };
@@ -108,11 +121,6 @@ function analysePage(url, html) {
     author: /"author"\s*:/.test(ld),
   };
   // Answer-first family, the same measures the free AI visibility check uses, so the two agree.
-  // Site chrome is stripped, except a <header> that carries the H1: that is the article head, not chrome.
-  const bodyHtml = (html.match(/<body[\s\S]*<\/body>/i) || [html])[0]
-    .replace(/<(nav|footer|aside|script|style)[\s\S]*?<\/\1>/gi, ' ')
-    .replace(/<header[\s\S]*?<\/header>/gi, (block) => (/<h1[\s>]/i.test(block) ? block : ' '));
-  const plain = (x) => x.replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
   const afterH1 = bodyHtml.split(/<\/h1>/i)[1] || '';
   const firstPara = plain((afterH1.match(/<p[^>]*>([\s\S]*?)<\/p>/i) || ['', ''])[1]);
   const firstParaWords = (firstPara.match(/[\p{L}\p{N}][\p{L}\p{N}'’-]*/gu) || []).length;
@@ -125,13 +133,18 @@ function analysePage(url, html) {
   const ownHostname = (() => { try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return ''; } })();
   // Абзацы, в которых вообще есть цифра. Без этого счётчика «цифры без источника» вменяется
   // странице, где цифр нет ни одной, например политике конфиденциальности.
-  const figureParagraphs = (bodyHtml.match(/<p[^>]*>[\s\S]*?<\/p>/gi) || []).filter((para) => /\d/.test(plain(para))).length;
-  const citedParagraphs = (bodyHtml.match(/<p[^>]*>[\s\S]*?<\/p>/gi) || []).filter((para) => {
-    if (!/\d/.test(plain(para))) return false;
-    return [...para.matchAll(/<a[^>]+href=["'](https?:\/\/[^"']+)["']/gi)].some((m) => {
-      try { return new URL(m[1]).hostname.replace(/^www\./, '') !== ownHostname; } catch { return false; }
-    });
-  }).length;
+  // Абзацы берём разбором дерева, а не регуляркой: на странице с незакрытым <p> регулярка
+  // склеивает переключатель валют, заголовок и текст в один «абзац с цифрой». Порог в двенадцать
+  // слов отсекает служебные обрывки: цена в карточке это не утверждение, которому нужен источник.
+  const PROSE_WORDS = 12;
+  const paras = (body ? body.querySelectorAll('p') : []).map((el) => ({
+    text: (el.text || '').replace(/\s+/g, ' ').trim(),
+    hrefs: el.querySelectorAll('a[href]').map((a) => a.getAttribute('href') || ''),
+  })).filter((x) => countWords(x.text) >= PROSE_WORDS && /\d/.test(x.text));
+  const figureParagraphs = paras.length;
+  const citedParagraphs = paras.filter((x) => x.hrefs.some((h) => {
+    try { return new URL(h, url).hostname.replace(/^www\./, '') !== ownHostname; } catch { return false; }
+  })).length;
   return { url, title, citedParagraphs, figureParagraphs, titleLength: title.length, description, descriptionLength: description.length, descriptionGarbage: shortcode, h1Count: h1s.length, h1: h1s[0] || '', images: imgs.length, imagesNoAlt: imgsNoAlt, canonical, robots, viewport, og, twitter, generator, hreflang, scripts, stylesheets, schemaTypes: [...new Set(schemaTypes)], words, links, dates, firstPara: firstPara.slice(0, 220), firstParaWords, answerFirst, h2Count, tables, sourcePhrases , telLinks, mailLinks, messengerLinks, contactPages, forms: realForms.length, formFields, formDepth, ctaFirstScreen, trust };
 }
 

@@ -13,6 +13,10 @@
  * Чего этот расчёт не знает: какие страницы приносят показы. Это видно только в Search Console,
  * доступ к которой даёт клиент, и это бесплатно. Без доступа мы считаем по выборке и говорим
  * об этом прямо, а не делаем вид, что выбрали важные страницы.
+ *
+ * Деньги в письмо по умолчанию не попадают. Объём работы машина считает честно, а цену называет
+ * человек: короткая страница бывает короткой намеренно, и счёт, выставленный автоматом, окажется
+ * счётом за работу, которой не нужно было делать. Цена включается флагом, осознанно.
  */
 
 /**
@@ -84,13 +88,17 @@ export function buildFoundationScope(audit, opts = {}) {
   const unit = Number(opts.unit ?? (lang === 'en' ? 50 : 4200));
   const minimum = Number(opts.minimum ?? (lang === 'en' ? 500 : 42000));
   const newPages = Math.max(0, Number(opts.newPages ?? 0));
+  const withPrice = opts.withPrice === true;
 
   const sampled = (audit.sample || []).filter((p) => p.title !== undefined && typeof p.words === 'number');
   const utility = sampled.filter((p) => isUtilityPage(p.url));
   const content = sampled.filter((p) => !isUtilityPage(p.url));
   const pages = [];
   for (const p of content) {
-    const issues = PAGE_ISSUES.filter((i) => i.test(p));
+    let issues = PAGE_ISSUES.filter((i) => i.test(p));
+    // Странице, которую пишем заново, незачем отдельной строкой советовать переписать первый
+    // абзац: это та же работа, названная дважды, и в списке она выглядит как две.
+    if (issues.some((i) => i.heavy)) issues = issues.filter((i) => i.heavy);
     if (!issues.length) continue;
     const tier = tierOf(issues);
     pages.push({
@@ -112,7 +120,7 @@ export function buildFoundationScope(audit, opts = {}) {
   const price = Math.max(minimum, raw);
 
   return {
-    lang, currency, unit, minimum, newPages,
+    lang, currency, unit, minimum, newPages, withPrice,
     host: audit.meta?.host,
     checkedAt: audit.meta?.collectedAt,
     sampledPages: sampled.length,
@@ -134,6 +142,9 @@ const T = {
     tier: { rewrite: 'написать заново', rework: 'переработать', touch: 'одна правка' },
     words: (n) => `${n} ${plural(n, 'слово', 'слова', 'слов')}`,
     newPages: (n, s) => `## Новые страницы: ${n}\n\nСтраниц, которых у вас нет, а рынок их спрашивает: ${n}. Каждая считается как страница с нуля, это ${s} ${plural(s, 'доля', 'доли', 'долей')}.`,
+    workHead: '## Объём работы',
+    workBody: (s) => `Всего ${s} ${plural(s, 'доля', 'доли', 'долей')} работы. Доля это работа над одной страницей: одна правка доля, две или три две доли, четыре и больше или пустая страница три. Цену мы назовём отдельно, когда вы согласуете сам список.`,
+    thinWarn: 'Среди них есть страницы короче трёхсот слов. Если такие страницы у вас задуманы короткими, это анонсы, новости или ссылки на чужой материал, скажите, и мы уберём их из списка: писать их заново незачем.',
     priceHead: '## Цена',
     priceBody: (s, u, c, raw) => `Доля работы над одной страницей стоит ${u} ${c}. Долей набралось ${s}, это ${raw} ${c}.`,
     atMin: (min, c) => `Минимум пакета ${min} ${c}, поэтому в счёте будет ${min} ${c}: меньше этой суммы браться нет смысла ни нам, ни вам.`,
@@ -157,6 +168,9 @@ const T = {
     tier: { rewrite: 'write from scratch', rework: 'rework', touch: 'one edit' },
     words: (n) => `${n} word${n === 1 ? '' : 's'}`,
     newPages: (n, s) => `## New pages: ${n}\n\nPages you do not have and the market asks for: ${n}. Each counts as a page written from scratch, ${s} share${s === 1 ? '' : 's'}.`,
+    workHead: '## Scope of work',
+    workBody: (s) => `${s} share${s === 1 ? '' : 's'} of work in total. A share is the work on one page: one edit is a share, two or three defects are two, four or more (or an empty page) three. We name the price separately, once you have agreed the list itself.`,
+    thinWarn: 'Some of these are under 300 words. If those pages are meant to be short, link posts, news items, announcements, say so and we will drop them from the list: there is nothing to rewrite.',
     priceHead: '## Price',
     priceBody: (s, u, c, raw) => `One share of work on a page costs ${u} ${c}. The scope came to ${s} shares, which is ${raw} ${c}.`,
     atMin: (min, c) => `The package minimum is ${min} ${c}, so the invoice will say ${min} ${c}: below that it is not worth either side's time.`,
@@ -194,11 +208,18 @@ export function renderFoundationScope(scope) {
   }
   if (scope.newPages) { L.push(t.newPages(scope.newPages, scope.newShares)); L.push(''); }
 
-  L.push(t.priceHead);
-  L.push('');
-  L.push(t.priceBody(scope.shares, scope.unit, scope.currency, scope.raw));
-  if (scope.atMinimum) L.push(t.atMin(scope.minimum, scope.currency));
-  L.push(t.total(scope.price, scope.currency));
+  if (scope.withPrice) {
+    L.push(t.priceHead);
+    L.push('');
+    L.push(t.priceBody(scope.shares, scope.unit, scope.currency, scope.raw));
+    if (scope.atMinimum) L.push(t.atMin(scope.minimum, scope.currency));
+    L.push(t.total(scope.price, scope.currency));
+  } else {
+    L.push(t.workHead);
+    L.push('');
+    L.push(t.workBody(scope.shares));
+  }
+  if (scope.pages.some((p) => p.issues.some((i) => i.id === 'thin'))) { L.push(''); L.push(t.thinWarn); }
   L.push('');
   L.push(t.needHead);
   L.push('');
@@ -216,7 +237,7 @@ export function renderFoundationScope(scope) {
 export function renderFoundationChecklist(scope) {
   const t = dict(scope.lang);
   const L = [`# ${scope.lang === 'en' ? 'Foundation checklist' : 'Чек-лист Foundation'}: ${scope.host}`, '',
-    `${scope.lang === 'en' ? 'Shares' : 'Долей'}: ${scope.shares} (${scope.pageShares} + ${scope.newShares} ${scope.lang === 'en' ? 'new' : 'новых'}). ${scope.lang === 'en' ? 'Price' : 'Цена'}: ${scope.price} ${scope.currency}.`, ''];
+    `${scope.lang === 'en' ? 'Shares' : 'Долей'}: ${scope.shares} (${scope.pageShares} + ${scope.newShares} ${scope.lang === 'en' ? 'new' : 'новых'}).${scope.withPrice ? ` ${scope.lang === 'en' ? 'Price' : 'Цена'}: ${scope.price} ${scope.currency}.` : ''}`, ''];
   for (const p of scope.pages) {
     L.push(`- [ ] ${p.title} (${t.tier[p.tier]}, ${p.shares})`);
     L.push(`      ${p.url}`);

@@ -45,8 +45,8 @@ if (!cmd || cmd === '--help' || cmd === '-h') {
     '      what the Fix package closes on this site: plan, client letter, executor checklist',
     '  operstack-audit fix-report <audit-fix-plan.json> <after.json> [--out report.md]',
     '      what was closed, what was not, and how much to refund',
-    '  operstack-audit foundation-scope <audit.json> [--lang ru|en] [--new-pages 3] [--gsc] [--unit 50] [--minimum 500] [--out base]',
-    '      the text work the Foundation package would do, page by page, and the price it adds up to',
+    '  operstack-audit foundation-scope <audit.json> [--lang ru|en] [--new-pages 3] [--gsc] [--price] [--out base]',
+    '      the text work the Foundation package would do, page by page; --price also states the money',
   ].join('\n'));
   process.exit(cmd ? 0 : 2);
 }
@@ -114,6 +114,7 @@ if (cmd === 'collect') {
     lang,
     newPages: Number(opt('--new-pages', 0)),
     hasSearchConsole: has("--gsc"),
+    withPrice: has('--price'),
     unit: opt('--unit') ? Number(opt('--unit')) : undefined,
     minimum: opt('--minimum') ? Number(opt('--minimum')) : undefined,
     currency: opt('--currency'),
@@ -123,6 +124,7 @@ if (cmd === 'collect') {
   writeFileSync(resolve(`${base}-foundation-letter.md`), renderFoundationScope(scope));
   writeFileSync(resolve(`${base}-foundation-checklist.md`), renderFoundationChecklist(scope));
   console.log(`${scope.pages.length} page(s) need text work of ${scope.sampledPages} sampled, ${scope.shares} share(s)`);
-  console.log(`price ${scope.price} ${scope.currency}${scope.atMinimum ? ` (raw ${scope.raw}, lifted to the package minimum)` : ''}`);
+  if (scope.withPrice) console.log(`price ${scope.price} ${scope.currency}${scope.atMinimum ? ` (raw ${scope.raw}, lifted to the package minimum)` : ''}`);
+  else console.log('no price in the letter: add --price once the list is agreed and you have decided what to charge');
   console.log(`wrote ${base}-foundation-scope.json, ${base}-foundation-letter.md, ${base}-foundation-checklist.md`);
 } else { console.error(`unknown command ${cmd}`); process.exit(2); }
