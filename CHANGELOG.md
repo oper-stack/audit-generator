@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.7.0
+
+### Added
+- **Foundation is scoped per page, not guessed.** `foundation-scope` reads the sampled pages and lists, for each one, the text work it needs: an opening that answers with a figure, sources beside the figures, sections, a table worth quoting, or a rewrite when the page is empty. Out come the scope as JSON, a letter the client agrees to, and a checklist.
+- **The price is arithmetic.** One share is the unit of work on a page: three shares to write a page from scratch or fix four or more defects, two for two or three, one for a single edit. Shares times the unit price, lifted to the package minimum. Defaults: 50 USD / 4200 RUB a share, minimum 500 USD / 42000 RUB. `--new-pages N` adds pages that do not exist yet at three shares each.
+- **Utility pages never enter a scope.** Privacy policies, terms, contact and the like, in both Latin and Russian slugs, are excluded and counted separately, and the letter says why. Nobody rewrites a privacy policy to open with a figure.
+- **Sources are only asked for where figures exist.** The collector now counts paragraphs carrying a digit, so a page with no numbers is never billed for naming their sources.
+- **The letter is honest about what it cannot see.** Without Search Console access the scope is built on a sitemap sample, and the letter says so and asks for the free read-only access that would let us scope on the pages that already earn impressions.
+- Both languages, same as the Fix letters.
+
+### Changed
+- `collect` keeps the text fields in `sample`: `answerFirst`, `sourcePhrases`, `citedParagraphs`, `figureParagraphs`, `h2Count`, `tables`, `firstParaWords`, `dates`. They were computed and thrown away, which is why Foundation could not be priced from an audit. No check logic changed.
+
 ## 0.6.0
 
 ### Added
