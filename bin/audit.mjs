@@ -32,7 +32,22 @@ const opt = (k, d) => { const i = rest.indexOf(k); return i === -1 ? d : rest[i 
 const has = (k) => rest.includes(k);
 
 if (!cmd || cmd === '--help' || cmd === '-h') {
-  console.log('Usage:\n  operstack-audit collect <url> [--pages 20] [--out audit.json] [--backlinks links.json] [--lang ru]\n  operstack-audit render <audit.json> [--out report.html] [--pdf]\n  operstack-audit check <audit.json>');
+  console.log([
+    'Usage:',
+    '  operstack-audit collect <url> [--pages 20] [--out audit.json] [--backlinks links.json] [--lang ru]',
+    '      collect the public signals of a site into audit.json',
+    '  operstack-audit render <audit.json> [--out report.html] [--pdf]',
+    '      render the report; --pdf also prints a PDF with headless Chrome',
+    '  operstack-audit check <audit.json>',
+    '      list narrative fields still holding placeholders and any score the checks do not support',
+    '',
+    '  operstack-audit fix-plan <audit.json> [--platform files|cms] [--lang ru|en] [--price 249] [--out base]',
+    '      what the Fix package closes on this site: plan, client letter, executor checklist',
+    '  operstack-audit fix-report <audit-fix-plan.json> <after.json> [--out report.md]',
+    '      what was closed, what was not, and how much to refund',
+    '  operstack-audit foundation-scope <audit.json> [--lang ru|en] [--new-pages 3] [--gsc] [--unit 50] [--minimum 500] [--out base]',
+    '      the text work the Foundation package would do, page by page, and the price it adds up to',
+  ].join('\n'));
   process.exit(cmd ? 0 : 2);
 }
 if (cmd === 'collect') {
