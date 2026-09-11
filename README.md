@@ -46,6 +46,18 @@ An agent can fill these fields from the JSON: the Claude Code plugin `operstack-
 
 Ten A4 pages: cover, executive summary with a scorecard, site overview with the sampled pages, critical issues, technical and on-page checklist, content and structure, AEO and GEO, off-page and conversion and limitations, roadmap in three phases, closing message. HTML always; PDF with `--pdf` when Chrome or Chromium is installed (`CHROME_PATH` overrides the lookup).
 
+## Writing the report: `draft`
+
+**If you have never done SEO, start here.** An audit tells you what a search engine and an AI see when they open your site. This tool writes that report for you. It does not guess anything about your business: every sentence in it comes from something that was measured on your pages, and where nothing could be measured it says so instead of filling the gap with words. You read it, correct what only you know, and send it.
+
+```
+npx @operstack/audit collect https://example.com --out audit.json
+npx @operstack/audit draft audit.json --lang en
+npx @operstack/audit render audit.json --pdf
+```
+
+Technically: `draft` fills the narrative fields (`summary`, `client.subject`, `overview.note`, `content`, `aeo`, `geo`, `offpage`, `conversion`, `roadmap`, `closing`) from the collected checks. Priorities and roadmap items are written as actions, taken from the same table the Fix checklist uses, so a finding and the work that closes it read the same. Fields an analyst has already written are left alone; anything still empty is listed at the end. For a Russian report over an English audit, check and area names are translated first.
+
 ## The Fix package: turning findings into agreed work
 
 An audit says what is wrong. `fix-plan` says what we will do about it, before anyone pays.
