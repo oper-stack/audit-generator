@@ -1,18 +1,41 @@
 {
   "name": "@operstack/audit",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "SEO, AEO and GEO audit generator: collect public signals from a site into audit.json, let an analyst or an agent fill the narrative, render the OperStack report as HTML and PDF.",
   "type": "module",
   "license": "MIT",
   "author": "OperStack",
-  "bin": { "operstack-audit": "bin/audit.mjs" },
-  "exports": { ".": "./src/index.mjs" },
-  "files": ["bin", "src", "templates", "examples/sample-audit.json", "README.md", "LICENSE"],
+  "bin": {
+    "operstack-audit": "bin/audit.mjs"
+  },
+  "exports": {
+    ".": "./src/index.mjs"
+  },
+  "files": [
+    "bin",
+    "src",
+    "templates",
+    "examples/sample-audit.json",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
-    "test": "node bin/audit.mjs render examples/sample-audit.json --out /tmp/operstack-audit-sample.html && node -e \"const s=require('fs').readFileSync('/tmp/operstack-audit-sample.html','utf8'); if(!s.includes('Executive summary')) process.exit(1); console.log('render ok', s.length, 'bytes')\"",
+    "test": "node src/test-scores.mjs && node bin/audit.mjs check examples/sample-audit.json && node bin/audit.mjs render examples/sample-audit.json --out /tmp/operstack-audit-sample.html",
     "sample": "node bin/audit.mjs render examples/sample-audit.json --pdf"
   },
-  "keywords": ["seo", "aeo", "geo", "audit", "llms-txt", "site-audit", "report"],
-  "engines": { "node": ">=20" },
-  "dependencies": { "node-html-parser": "^9.0.4" }
+  "keywords": [
+    "seo",
+    "aeo",
+    "geo",
+    "audit",
+    "llms-txt",
+    "site-audit",
+    "report"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "node-html-parser": "^9.0.4"
+  }
 }

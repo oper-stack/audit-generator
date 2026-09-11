@@ -65,7 +65,20 @@ function analysePage(url, html) {
   const ld = root.querySelectorAll('script[type="application/ld+json"]').map((x) => x.text).join('\n');
   const dates = { published: attr('meta[property="article:published_time"]', 'content') || (ld.match(/"datePublished"\s*:\s*"([^"]+)"/) || [])[1] || '', modified: attr('meta[property="article:modified_time"]', 'content') || (ld.match(/"dateModified"\s*:\s*"([^"]+)"/) || [])[1] || '' };
   const shortcode = /\[[a-z_-]+ [^\]]*\]/i.test(description) || /^[A-Za-z0-9+/=]{40,}$/.test(description);
-  return { url, title, titleLength: title.length, description, descriptionLength: description.length, descriptionGarbage: shortcode, h1Count: h1s.length, h1: h1s[0] || '', images: imgs.length, imagesNoAlt: imgsNoAlt, canonical, robots, viewport, og, twitter, generator, hreflang, scripts, stylesheets, schemaTypes: [...new Set(schemaTypes)], words, links, dates };
+  // Answer-first family, the same measures the free AI visibility check uses, so the two agree.
+  // Site chrome is stripped, except a <header> that carries the H1: that is the article head, not chrome.
+  const bodyHtml = (html.match(/<body[\s\S]*<\/body>/i) || [html])[0]
+    .replace(/<(nav|footer|aside|script|style)[\s\S]*?<\/\1>/gi, ' ')
+    .replace(/<header[\s\S]*?<\/header>/gi, (block) => (/<h1[\s>]/i.test(block) ? block : ' '));
+  const plain = (x) => x.replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
+  const afterH1 = bodyHtml.split(/<\/h1>/i)[1] || '';
+  const firstPara = plain((afterH1.match(/<p[^>]*>([\s\S]*?)<\/p>/i) || ['', ''])[1]);
+  const firstParaWords = (firstPara.match(/[\p{L}\p{N}][\p{L}\p{N}'’-]*/gu) || []).length;
+  const answerFirst = firstParaWords >= 20 && firstParaWords <= 90 && /\d/.test(firstPara);
+  const h2Count = (bodyHtml.match(/<h2[\s>]/gi) || []).length;
+  const tables = (bodyHtml.match(/<table[\s>]/gi) || []).length;
+  const sourcePhrases = (text.match(/\b(according to|source:|sources:|data from|reported by|published by|registry|statistics office|central bank)\b/gi) || []).length;
+  return { url, title, titleLength: title.length, description, descriptionLength: description.length, descriptionGarbage: shortcode, h1Count: h1s.length, h1: h1s[0] || '', images: imgs.length, imagesNoAlt: imgsNoAlt, canonical, robots, viewport, og, twitter, generator, hreflang, scripts, stylesheets, schemaTypes: [...new Set(schemaTypes)], words, links, dates, firstPara: firstPara.slice(0, 220), firstParaWords, answerFirst, h2Count, tables, sourcePhrases };
 }
 
 async function readSitemap(url, seen = new Set(), depth = 0) {
@@ -115,7 +128,14 @@ export async function collect(startUrl, { pages = 20, log = () => {} } = {}) {
   const blockedAgents = blocks.filter((b) => !b.agents.includes('*') && b.rules.some((r) => r.key === 'disallow' && r.value === '/')).flatMap((b) => b.agents);
   checks.push(row('robots', 'technical', 'robots.txt', robots.ok ? (sitemapUrls.length ? 'ok' : 'warn') : 'bad', robots.ok ? `${disallows.length} disallow rule(s) in ${blocks.length} agent block(s), ${sitemapUrls.length} sitemap line(s)` : `HTTP ${robots.status}`, robots.ok && !sitemapUrls.length ? 'no Sitemap: line' : ''));
   if (starBlocksAll) checks.push(row('robots-block', 'technical', 'robots.txt blocks the whole site', 'bad', 'Disallow: / under User-agent: *', 'search engines are told not to crawl anything'));
-  if (blockedAgents.length) checks.push(row('robots-ai', 'geo', 'AI crawlers blocked in robots.txt', 'na', `${blockedAgents.length} agent(s) fully disallowed, e.g. ${blockedAgents.slice(0, 4).join(', ')}`, 'a policy choice: these systems will not read the site or cite it from a fresh crawl'));
+  // The two kinds of AI agent are not the same decision. A search fetcher is the one that can cite the
+  // site in an answer, so blocking it costs visibility and is scored. A training crawler is a policy
+  // choice the owner is entitled to make, so it is reported and never scored.
+  const AI_FETCHERS = ['oai-searchbot', 'chatgpt-user', 'perplexitybot', 'perplexity-user', 'claude-searchbot', 'claude-user', 'bingbot', 'duckassistbot', 'applebot'];
+  const blockedFetchers = blockedAgents.filter((a) => AI_FETCHERS.includes(a));
+  const blockedTrainers = blockedAgents.filter((a) => !AI_FETCHERS.includes(a));
+  checks.push(row('ai-search-access', 'geo', 'AI search fetchers allowed', blockedFetchers.length ? 'bad' : 'ok', blockedFetchers.length ? `${blockedFetchers.length} blocked: ${blockedFetchers.join(', ')}` : 'every AI search fetcher may read the site', blockedFetchers.length ? 'these are the agents that fetch a page to cite it in an answer' : ''));
+  if (blockedTrainers.length) checks.push(row('robots-ai', 'geo', 'AI training crawlers blocked (policy)', 'na', `${blockedTrainers.length} agent(s) fully disallowed: ${blockedTrainers.join(', ')}`, 'a policy choice, not a defect: these systems will not train on the site, and will not cite it from their own crawl either'));
 
   log('sitemaps');
   const candidates = sitemapUrls.length ? sitemapUrls : [`${origin}/sitemap.xml`, `${origin}/sitemap_index.xml`, `${origin}/sitemap-index.xml`];
@@ -179,17 +199,28 @@ export async function collect(startUrl, { pages = 20, log = () => {} } = {}) {
   if (utility.length) checks.push(row('utility', 'technical', 'Utility pages in the sitemap', 'warn', `${utility.length} URL(s) such as ${new URL(utility[0]).pathname}`, 'cart, wishlist, tag and author pages add noise to the index'));
   const redirected = sample.filter((p) => p.redirect).length; const broken = sample.filter((p) => p.status && p.status >= 400).length;
   if (sitemapPages.length) checks.push(row('sitemap-health', 'technical', 'Sitemap URLs that answer 200', broken ? 'bad' : redirected ? 'warn' : 'ok', `${sample.length - redirected - broken} of ${sample.length} sampled URLs answer 200${redirected ? `, ${redirected} redirect` : ''}${broken ? `, ${broken} broken` : ''}`));
+  if (good.length) {
+    const af = good.filter((p) => p.answerFirst).length;
+    checks.push(row('answer-first', 'aeo', 'Answer-first opening paragraph', af === good.length ? 'ok' : af ? 'warn' : 'bad', `${af} of ${good.length} sampled page(s) open with 20 to 90 words carrying a figure, right after the H1`, af === good.length ? '' : 'that paragraph is the one an answer engine lifts'));
+    const structured = good.filter((p) => p.h2Count >= 3).length;
+    checks.push(row('sections', 'aeo', 'Section structure', structured === good.length ? 'ok' : structured ? 'warn' : 'bad', `${structured} of ${good.length} sampled page(s) carry three or more H2 sections`, structured === good.length ? '' : 'engines quote sections, not walls of text'));
+    const withTables = good.filter((p) => p.tables > 0).length;
+    checks.push(row('tables', 'aeo', 'Tables in the content', withTables ? 'ok' : 'warn', withTables ? `${withTables} of ${good.length} sampled page(s) use a table` : 'no table on the sampled pages', withTables ? '' : 'tables are the second most quoted format after the opening paragraph'));
+    const sourced = good.filter((p) => p.sourcePhrases > 0).length;
+    checks.push(row('sources', 'content', 'Sources named in the text', sourced === good.length ? 'ok' : sourced ? 'warn' : 'bad', `${sourced} of ${good.length} sampled page(s) name where a figure comes from`, sourced === good.length ? '' : 'an unsourced figure is the first thing an engine drops'));
+  }
   const dated = good.filter((p) => p.dates.modified || p.dates.published).length;
   if (good.length > 2) checks.push(row('dates', 'content', 'Publication dates exposed', dated ? 'ok' : 'warn', dated ? `${dated} of ${good.length} sampled pages expose dates` : 'no article dates in the sample: answer engines cannot tell what is current'));
   if (/wordpress/i.test(hp?.generator || '')) { const x = await get(`${origin}/xmlrpc.php`, { method: 'HEAD' }); if (x.status === 405 || x.status === 200) checks.push(row('xmlrpc', 'technical', 'xmlrpc.php', 'warn', `answers ${x.status}`, 'pingback endpoint open: attack surface with no SEO value')); }
 
-  const scores = suggestScores(checks);
+  const { scores, scoreBasis } = computeScores(checks);
   const critical = checks.filter((c) => c.status === 'bad').map((c) => ({ title: c.label, text: `${c.value}${c.comment ? `. ${c.comment}` : ''}`, level: 'bad' }));
 
   return {
     meta: { site: home.final, host, collectedAt: new Date().toISOString(), tool: '@operstack/audit 0.1.0', auditType: 'External audit (no Search Console or analytics access)', language: hp ? (hp.og?.locale || '') : '' },
     client: { name: '{{CLIENT NAME}}', subject: '{{What the site sells and where}}', reportDate: new Date().toISOString().slice(0, 10), preparedBy: 'OperStack' },
     scores,
+    scoreBasis,
     summary: { lead: '{{Three sentences: what the site is, what works, what holds it back.}}', verdict: '{{Key takeaway in three sentences, ending with how fast the critical issues can be fixed.}}', priorities: ['{{Priority one}}', '{{Priority two}}', '{{Priority three}}'] },
     overview: { rows: [['CMS / stack', hp?.generator || '{{stack}}'], ['Pages in sitemap', String(sitemapPages.length)], ['Language', '{{language}}'], ['What is sold', '{{products}}']], note: '{{One paragraph on how the offer is structured on the site and whether it is clear.}}' },
     critical,
@@ -213,16 +244,58 @@ export async function collect(startUrl, { pages = 20, log = () => {} } = {}) {
 
 function median(a) { const s = [...a].sort((x, y) => x - y); return s.length ? s[Math.floor(s.length / 2)] : 0; }
 
-/** 0 to 10 per group from the statuses: ok 1, warn 0.5, bad 0; na ignored. An analyst may override. */
-export function suggestScores(checks) {
-  const groups = { technical: 'SEO, technical', onpage: 'SEO, content and structure', content: 'SEO, content and structure', aeo: 'AEO, answers and snippets', geo: 'GEO, visibility in AI systems' };
-  const acc = {};
-  for (const c of checks) {
-    const g = groups[c.group]; if (!g || c.status === 'na') continue;
-    acc[g] ??= { n: 0, s: 0 }; acc[g].n++; acc[g].s += c.status === 'ok' ? 1 : c.status === 'warn' ? 0.5 : 0;
+/**
+ * The six areas of the report. `groups` lists the check groups that feed the score.
+ * An area with no groups is an area this audit does not test: it is reported as
+ * "not measured", never as a low score. Nothing in a report may be scored by hand.
+ */
+export const SCORE_AREAS = [
+  { label: 'SEO, technical', groups: ['technical'] },
+  { label: 'SEO, content and structure', groups: ['onpage', 'content'] },
+  { label: 'AEO, answers and snippets', groups: ['aeo'] },
+  { label: 'GEO, visibility in AI systems', groups: ['geo'] },
+  { label: 'Off-page and trust', groups: [], reason: 'no backlink or mention tool is used in this audit' },
+  { label: 'Conversion and UX', groups: [], reason: 'no analytics or behaviour data was reviewed' },
+];
+
+/**
+ * Score every area from the collected checks: ok 1, warn 0.5, bad 0, na ignored, rounded to 0-10.
+ * Returns the scores and the count each one came from, so the report can print its own evidence.
+ * An area with no counted check scores null and carries the reason it was not measured.
+ */
+export function computeScores(checks) {
+  const scores = {}; const scoreBasis = {};
+  for (const area of SCORE_AREAS) {
+    const rows = (checks || []).filter((c) => area.groups.includes(c.group) && c.status !== 'na');
+    if (!rows.length) {
+      scores[area.label] = null;
+      scoreBasis[area.label] = { counted: 0, ok: 0, warn: 0, bad: 0, note: `not measured: ${area.reason || 'this audit collected no check in this area'}` };
+      continue;
+    }
+    const ok = rows.filter((c) => c.status === 'ok').length;
+    const warn = rows.filter((c) => c.status === 'warn').length;
+    const bad = rows.filter((c) => c.status === 'bad').length;
+    scores[area.label] = Math.round(((ok + warn * 0.5) / rows.length) * 10);
+    scoreBasis[area.label] = { counted: rows.length, ok, warn, bad, note: `${ok} of ${rows.length} checks pass${warn ? `, ${warn} ${warn === 1 ? 'needs' : 'need'} attention` : ''}${bad ? `, ${bad} ${bad === 1 ? 'fails' : 'fail'}` : ''}` };
   }
-  const out = {};
-  for (const [g, { n, s }] of Object.entries(acc)) out[g] = Math.round((s / n) * 10);
-  for (const g of ['Off-page and trust', 'Conversion and UX']) out[g] = out[g] ?? null;
-  return out;
+  return { scores, scoreBasis };
 }
+
+/** Every way the scores stored in an audit disagree with its own checks. Empty means reproducible. */
+export function verifyScores(audit) {
+  const { scores } = computeScores(audit.checks || []);
+  const show = (v) => (v === null || v === undefined ? 'not measured' : `${v}/10`);
+  const problems = [];
+  for (const [label, expected] of Object.entries(scores)) {
+    const stored = (audit.scores || {})[label];
+    const actual = stored === undefined ? null : stored;
+    if (actual !== expected) problems.push(`${label}: the report says ${show(actual)}, the checks give ${show(expected)}`);
+  }
+  for (const label of Object.keys(audit.scores || {})) {
+    if (!(label in scores)) problems.push(`${label}: not one of the six audit areas, so nothing measures it`);
+  }
+  return problems;
+}
+
+/** @deprecated kept for 0.1.x callers: use computeScores, which also returns the evidence. */
+export function suggestScores(checks) { return computeScores(checks).scores; }

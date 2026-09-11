@@ -7,6 +7,7 @@ import { writeFileSync, existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { computeScores } from './collect.mjs';
 
 const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const isPlaceholder = (s) => typeof s === 'string' && /\{\{[^}]*\}\}/.test(s);
@@ -22,6 +23,7 @@ export function checkNarrative(audit) {
     else if (v && typeof v === 'object') for (const [k, x] of Object.entries(v)) walk(x, path ? `${path}.${k}` : k);
   };
   for (const k of ['client', 'summary', 'overview', 'critical', 'content', 'aeo', 'geo', 'offpage', 'conversion', 'roadmap', 'closing']) walk(audit[k], k);
+  (audit.critical || []).forEach((c, i) => { if (!c.text && !c.cost && !c.fix) out.push(`critical[${i}].text (the issue "${c.title || '?'}" would print as a bare headline)`); });
   return out;
 }
 
@@ -59,6 +61,8 @@ function css() {
   .score-num { font-family: "Fraunces", Georgia, serif; font-size: 22pt; font-weight: 600; color: var(--accent); line-height: 1; font-variant-numeric: tabular-nums; }
   .score-num.low { color: var(--danger); } .score-num.mid { color: var(--warn); } .score-num.ok { color: var(--ok); }
   .score-note { font-size: 8.5pt; color: var(--muted); flex: 1; text-align: right; }
+  .score-num.na { font-family: inherit; font-size: 10pt; font-weight: 600; color: var(--muted); letter-spacing: .02em; }
+  .scorecard-foot { font-size: 8.5pt; color: var(--muted); margin: -3mm 0 6mm; }
   .verdict { background: var(--ink); color: #e8ecef; border-radius: 4px; padding: 5mm 6mm; margin: 5mm 0; }
   .verdict p { color: #e8ecef; margin: 0; }
   table { width: 100%; border-collapse: collapse; margin: 3mm 0 5mm; font-size: 9.2pt; }
@@ -68,7 +72,9 @@ function css() {
   .cards { display: grid; gap: 3mm; margin: 4mm 0; }
   .card { border-left: 3px solid var(--danger); background: #fbf1f0; padding: 3.5mm 4mm; border-radius: 0 4px 4px 0; }
   .card.warn { border-left-color: var(--warn); background: #fdf8ee; }
-  .card h4 { font-size: 10pt; margin-bottom: 1.5mm; } .card p { font-size: 9.3pt; margin: 0; }
+  .card h4 { font-size: 10pt; margin-bottom: 1.5mm; } .card p { font-size: 9.3pt; margin: 0 0 1.5mm; } .card p:last-child { margin-bottom: 0; }
+  .card-tag { display: inline-block; font-size: 7.5pt; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-right: 2mm; }
+  .card-empty { color: var(--danger); font-style: italic; }
   .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 6mm; }
   .callout { background: var(--gold-soft); border-radius: 4px; padding: 4mm 5mm; margin: 4mm 0; border: 1px solid #e8dcc8; }
   .callout p { color: var(--ink); margin: 0; font-size: 9.5pt; }
@@ -91,16 +97,27 @@ export function toHtml(audit) {
   const a = audit;
   const groups = [['technical', 'Technical'], ['onpage', 'On-page'], ['content', 'Content'], ['aeo', 'Answer engines'], ['geo', 'Generative engines'], ['overview', 'Overview']];
   const checksBy = (g) => (a.checks || []).filter((c) => c.group === g);
-  const scoreCards = Object.entries(a.scores || {}).map(([label, n]) => `<div class="score"><div class="label">${esc(label)}</div><div class="score-row"><span class="score-num ${scoreClass(n)}">${n === null || n === undefined ? 'n/a' : `${n}/10`}</span><span class="score-note">${esc((a.scoreNotes || {})[label] || '')}</span></div></div>`).join('');
+  const { scores: measured, scoreBasis } = computeScores(a.checks || []);
+  const scoreCards = Object.entries(measured).map(([label, n]) => {
+    const basis = scoreBasis[label] || {};
+    const num = n === null ? '<span class="score-num na">not measured</span>' : `<span class="score-num ${scoreClass(n)}">${n}/10</span>`;
+    const note = n === null ? String(basis.note || '').replace(/^not measured:\s*/, '') : basis.note || '';
+    return `<div class="score"><div class="label">${esc(label)}</div><div class="score-row">${num}<span class="score-note">${esc(note)}</span></div></div>`;
+  }).join('');
   let n = 1;
   const pages = [];
   pages.push(`<div class="page"><div class="cover"><div><div class="cover-top"><div class="eyebrow">Digital marketing audit</div><h1>SEO, AEO and GEO<br>audit report</h1><p class="cover-sub">${t(a.client.subject)}</p><span class="cover-url">${esc(a.meta.host)}</span></div>
     <dl class="cover-meta"><div><dt>Audit subject</dt><dd>${t(a.client.name)}</dd></div><div><dt>Report date</dt><dd>${esc(a.client.reportDate)}</dd></div><div><dt>Audit type</dt><dd>${esc(a.meta.auditType)}</dd></div><div><dt>Prepared by</dt><dd>${esc(a.client.preparedBy || 'OperStack')}</dd></div></dl></div>
     <div class="cover-foot">Public signals were collected by ${esc(a.meta.tool)} on ${esc((a.meta.collectedAt || '').slice(0, 10))}. Every status in this report can be reproduced from the site as it stood on that day.</div></div></div>`);
   n++;
-  pages.push(`<div class="page">${header(a, 'Executive summary')}<div class="eyebrow">01 · Summary</div><h2>Executive summary</h2><p class="lead">${t(a.summary.lead)}</p><div class="scorecard">${scoreCards}</div><div class="verdict"><p><strong>Key takeaway:</strong> ${t(a.summary.verdict)}</p></div><h3>Three priorities</h3>${olist(a.summary.priorities)}${footer(a, n++)}</div>`);
+  pages.push(`<div class="page">${header(a, 'Executive summary')}<div class="eyebrow">01 · Summary</div><h2>Executive summary</h2><p class="lead">${t(a.summary.lead)}</p><div class="scorecard">${scoreCards}</div><p class="scorecard-foot">Each score counts the checks in this report: a check that passes scores one, a check that needs attention a half, a failing check nothing. An area marked <strong>not measured</strong> is an area this audit does not test, and is never scored on an impression. Every figure here can be recomputed from section 04 onwards.</p><div class="verdict"><p><strong>Key takeaway:</strong> ${t(a.summary.verdict)}</p></div><h3>Three priorities</h3>${olist(a.summary.priorities)}${footer(a, n++)}</div>`);
   pages.push(`<div class="page">${header(a, 'Site overview')}<div class="eyebrow">02 · Overview</div><h2>What the site is</h2><table><tr><th>Parameter</th><th>Value</th></tr>${(a.overview.rows || []).map(([k, v]) => `<tr><td>${t(k)}</td><td>${t(v)}</td></tr>`).join('')}</table><p>${t(a.overview.note)}</p><h3>Pages sampled</h3><table><tr><th>URL</th><th>Title</th><th>Words</th><th>H1</th><th>Alt</th></tr>${(a.sample || []).filter((p) => p.title !== undefined).slice(0, 14).map((p) => `<tr><td><code>${esc(new URL(p.url).pathname)}</code></td><td>${esc(p.title)}</td><td>${p.words}</td><td>${p.h1Count}</td><td>${p.images ? `${p.images - p.imagesNoAlt}/${p.images}` : '·'}</td></tr>`).join('')}</table>${footer(a, n++)}</div>`);
-  const cards = (a.critical || []).map((c, i) => `<div class="card ${c.level === 'warn' ? 'warn' : ''}"><h4>${i + 1}. ${t(c.title)}</h4><p>${t(c.text)}</p></div>`).join('') || '<p>No critical defects were found in the public signals.</p>';
+  const cardBody = (c) => [
+    c.text ? `<p>${t(c.text)}</p>` : '',
+    c.cost ? `<p><span class="card-tag">What it costs</span>${t(c.cost)}</p>` : '',
+    c.fix ? `<p><span class="card-tag">Fix</span>${t(c.fix)}</p>` : '',
+  ].join('') || '<p class="card-empty">This issue has no description in the audit file.</p>';
+  const cards = (a.critical || []).map((c, i) => `<div class="card ${c.level === 'warn' ? 'warn' : ''}"><h4>${i + 1}. ${t(c.title)}</h4>${cardBody(c)}</div>`).join('') || '<p>No critical defects were found in the public signals.</p>';
   pages.push(`<div class="page">${header(a, 'Critical issues')}<div class="eyebrow">03 · P0</div><h2>Critical issues, fix first</h2><div class="cards">${cards}</div>${footer(a, n++)}</div>`);
   const techRows = [...checksBy('technical'), ...checksBy('onpage')].map((c) => `<tr><td>${esc(c.label)}</td>${statusCell(c.status)}<td>${esc(c.value)}${c.comment ? `<br><span style="color:var(--muted)">${esc(c.comment)}</span>` : ''}</td></tr>`).join('');
   pages.push(`<div class="page">${header(a, 'Technical SEO')}<div class="eyebrow">04 · Technical</div><h2>Technical and on-page checklist</h2><table><tr><th>Check</th><th>Status</th><th>Finding</th></tr>${techRows}</table>${footer(a, n++)}</div>`);

@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.2.0
+
+### Fixed
+- **Scores are computed, never typed.** The scorecard on page 2 is rendered from the collected checks every time the report is built. A number written by hand into `audit.json` is ignored, and `operstack-audit check` and `render` both name it. Before this, any figure an analyst typed was printed as a measurement.
+- **Areas the audit does not measure are printed as "not measured".** Off-page and trust has no backlink tool behind it and Conversion and UX has no analytics behind it, so neither is scored. They used to accept a number like any other area.
+- **Critical issues print their body.** Cards written with `cost` and `fix` rendered as bare headlines, because the template only read `text`. All three fields now render, and `check` fails on an issue with no body at all.
+- Every score card carries the count it came from, for example "3 of 5 checks pass, 2 need attention", so the reader can recompute it from the checklist.
+
+### Added
+- Answer-first checks, the same measures the free AI visibility check uses, so the two products agree: an answer-first opening paragraph with a figure, three or more H2 sections, a table in the content, and a named source next to a figure. AEO rests on five checks instead of two.
+- AI crawler access is split in two: a blocked **search fetcher** is a defect and is scored, a blocked **training crawler** is a policy choice and is reported without a score.
+- `computeScores`, `verifyScores` and `SCORE_AREAS` are exported. `suggestScores` still works and is deprecated.
+- `npm test` runs the scoring tests in `src/test-scores.mjs`.
+
 ## 0.1.0 (2026-09-10)
 
 First public release.
