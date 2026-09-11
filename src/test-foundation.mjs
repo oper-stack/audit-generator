@@ -17,6 +17,7 @@ is('цена без работы ноль долей', clean.shares, 0);
 
 const thin = buildFoundationScope(audit([page({ words: 120 })]));
 is('пустая страница это три доли', thin.pages[0].shares, 3);
+is('и одна работа, а не список повторов', buildFoundationScope(audit([page({ words: 90, answerFirst: false, h2Count: 0, tables: 0 })])).pages[0].issues.map((i) => i.id), ['thin']);
 is('и помечена как «написать заново»', thin.pages[0].tier, 'rewrite');
 
 const one = buildFoundationScope(audit([page({ answerFirst: false })]));
@@ -66,7 +67,20 @@ is('цена доли по умолчанию', en.unit, 50);
 is('минимум пакета', en.minimum, 500);
 const letterEn = renderFoundationScope({ ...en, host: 'x.com', pages: en.pages.map((p) => ({ ...p, title: 'A page' })) });
 ok('английское письмо без кириллицы', !/[А-Яа-яЁё]/.test(letterEn));
-ok('в английском письме есть цена', letterEn.includes('500 USD'));
+
+// Деньги в письме только по флагу: цену называет человек, а не машина
+ok('по умолчанию цены в письме нет', !/USD|RUB/.test(letterEn));
+ok('вместо неё объём работы', letterEn.includes('share') && letterEn.includes('name the price separately'));
+const priced = buildFoundationScope(audit([page({ url: 'https://x.ru/a/', words: 100 })]), { lang: 'en', withPrice: true });
+ok('с флагом цена появляется', renderFoundationScope(priced).includes('500 USD'));
+ok('и в чек-листе тоже', renderFoundationChecklist(priced).includes('500 USD'));
+ok('без флага чек-лист без денег', !/USD|RUB/.test(renderFoundationChecklist(en)));
+is('доли считаются в обоих случаях', [en.shares > 0, priced.shares > 0], [true, true]);
+
+// Короткие страницы бывают короткими намеренно, поэтому их просим подтвердить
+const thinLetter = renderFoundationScope(buildFoundationScope(audit([page({ url: 'https://x.ru/n/', words: 90 })])));
+ok('письмо просит подтвердить короткие страницы', thinLetter.includes('задуманы короткими'));
+ok('без коротких страниц такой оговорки нет', !renderFoundationScope(buildFoundationScope(audit([page({ url: 'https://x.ru/a/', answerFirst: false })]))).includes('задуманы короткими'));
 
 // Чек-лист
 const list = renderFoundationChecklist(many);

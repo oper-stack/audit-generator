@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.7.2
+
+### Fixed
+- **A page the parser could not read was reported as empty.** `words` came from the HTML parser's view of `<body>`; on a large or untidy page the parser finds no body and returns nothing, and the audit then called a live page thin and Foundation offered to write it from scratch. Reproduced on css-tricks.com: 178 KB of HTML, no body found, 0 words against 978 real ones. There is a fallback now, and the collector takes whichever extraction yields more text.
+- **Word counts included the navigation and the footer.** Four different link posts on the same site each measured 3,503 words; their actual content is about 20. Words are now counted on the body with chrome stripped, which is what the thin-page check was always meant to measure.
+- **Paragraphs were matched with a regular expression.** On a page with an unclosed `<p>` this glued the currency switcher, the heading and the prose into one "paragraph carrying a figure". Paragraphs come from the parsed tree now, and a paragraph counts as prose only from twelve words up, so a price in a card is no longer a claim that needs a source.
+
+### Changed
+- **`foundation-scope` no longer prices the work by default.** It states the scope and the shares; `--price` adds the money. A short page is sometimes short on purpose, and an automatic invoice for rewriting it is an invoice for work that should not happen.
+- **The letter asks about short pages instead of assuming.** When pages under 300 words are in the list, it says that link posts, news items and announcements can be dropped from the scope if they are meant to be short.
+- A page being rewritten no longer also carries advice to rewrite its opening paragraph: one piece of work, named once.
+
 ## 0.7.1
 
 ### Fixed

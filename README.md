@@ -79,7 +79,7 @@ npx @operstack/audit foundation-scope audit.json --lang en --new-pages 3
 
 Each sampled page is read for five things: does it open with an answer carrying a figure, are the figures sourced, is it broken into sections, does it carry a table worth quoting, and is there enough of it at all. A page needing one edit is one share of work, two or three defects is two, four or more (or an empty page) is three, and a page that does not exist yet is three. Shares times the unit price, lifted to the package minimum.
 
-Utility pages are excluded and counted separately: nobody rewrites a privacy policy to open with a figure. Sources are asked for only where the page actually carries figures. Without Search Console access the scope is built on a sitemap sample, and the letter says so rather than implying we picked the pages that matter.
+The letter states the scope and the shares; `--price` adds the money, because a short page is sometimes short on purpose and an automatic invoice for rewriting it is an invoice for work that should not happen. Utility pages are excluded and counted separately: nobody rewrites a privacy policy to open with a figure. Sources are asked for only where the page actually carries figures. Without Search Console access the scope is built on a sitemap sample, and the letter says so rather than implying we picked the pages that matter.
 
 ## Example
 
