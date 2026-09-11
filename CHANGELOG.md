@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.8.0
+
+### Added
+- **`draft` writes the report's words from the checks.** A collected audit used to arrive with 32 empty narrative fields: the summary, the verdict, the three priorities, the content reading, the roadmap, the closing. Somebody had to write them for every single sale. `operstack-audit draft audit.json` fills all of them from the numbers already measured, and lists anything it could not. On a real audit of a 20-page site: 32 empty fields before, 0 after, and `check` passes on the result.
+- **The words are for the owner, not for an SEO.** The report is read by someone who paid an agency, saw no result and is now working it out. So a priority reads "write alt text for every image from what it actually shows. Now: 31 of 99 images carry alt text" rather than "Image alt text: 31/99". The actions are the same sentences the Fix checklist uses, so the audit and the work that follows speak one language.
+- **It invents nothing.** Every sentence restates a measured number or a line read off the page, and a line read off the page is marked as read and asked to be confirmed. Where nothing was measured it says so and why: link and mention data is sold for money, and this report was promised on free sources only.
+- **Russian reports over English audits** translate the check names and area names first, so the owner does not read a Russian paragraph with English fragments in it.
+- An analyst's edit is never overwritten: only fields still holding a placeholder are filled.
+
+### Fixed
+- Percentages in Russian output declined wrongly ("31 процентов"), now "31 процент".
+
 ## 0.7.2
 
 ### Fixed
