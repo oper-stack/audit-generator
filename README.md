@@ -46,6 +46,20 @@ An agent can fill these fields from the JSON: the Claude Code plugin `operstack-
 
 Ten A4 pages: cover, executive summary with a scorecard, site overview with the sampled pages, critical issues, technical and on-page checklist, content and structure, AEO and GEO, off-page and conversion and limitations, roadmap in three phases, closing message. HTML always; PDF with `--pdf` when Chrome or Chromium is installed (`CHROME_PATH` overrides the lookup).
 
+## What an AI does not see: the JavaScript check
+
+**In plain words.** Some sites draw themselves with scripts. A person opens the page and sees the
+full text; a robot that does not run scripts sees an empty frame. The robots that pull a page into
+an AI answer are exactly that kind of robot. So the owner reads his own page, sees plenty of text,
+and cannot understand why nobody quotes it. This check reads the page twice, as a plain request and
+in a real browser, and tells you how much of the text only exists in the second reading.
+
+**What it does.** `collect` runs Chrome or Chromium over the homepage and two sampled pages, strips
+the navigation and footer from both readings, and compares the word counts. Forty percent hidden, or
+a page that is nearly empty without scripts, fails. Ten to forty warns. Under ten passes. With no
+browser installed the check says it was not measured and why. `--no-rendered` skips it,
+`--rendered-pages N` changes how many pages are opened; each page costs roughly half a minute.
+
 ## Writing the report: `draft`
 
 **If you have never done SEO, start here.** An audit tells you what a search engine and an AI see when they open your site. This tool writes that report for you. It does not guess anything about your business: every sentence in it comes from something that was measured on your pages, and where nothing could be measured it says so instead of filling the gap with words. You read it, correct what only you know, and send it.
