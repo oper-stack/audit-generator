@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.1
+
+### Fixed
+- **`operstack-audit` with no arguments listed three commands of six.** `fix-plan`, `fix-report` and `foundation-scope` existed only in the source header, so nobody running the tool could find them. The usage block now names every command with its flags and one line on what it does.
+- `package.json` is exported, so tooling that reads a dependency's version no longer fails on the exports map.
+
 ## 0.7.0
 
 ### Added
