@@ -77,7 +77,19 @@ function analysePage(url, html) {
   const formEls = root.querySelectorAll('form');
   const realForms = formEls.filter((f) => !/search/i.test(`${f.getAttribute('class') || ''} ${f.getAttribute('id') || ''} ${f.getAttribute('role') || ''} ${f.getAttribute('action') || ''}`));
   const firstForm = realForms[0] || null;
-  const formFields = firstForm ? firstForm.querySelectorAll('input, textarea, select').filter((i) => !/^(hidden|submit|button|image)$/i.test(i.getAttribute('type') || '')).length : 0;
+  // A honeypot is invisible to a person, so counting it as a field the visitor must fill is wrong.
+  const visibleToVisitor = (el) => {
+    if (el.getAttribute('tabindex') === '-1') return false;
+    if (/honeypot|\bhp\b/i.test(`${el.getAttribute('class') || ''} ${el.getAttribute('name') || ''}`)) return false;
+    for (let n = el.parentNode; n; n = n.parentNode) {
+      if (typeof n.getAttribute !== 'function') break;
+      if (n.getAttribute('aria-hidden') === 'true') return false;
+      if (/honeypot|\bhp\b/i.test(n.getAttribute('class') || '')) return false;
+      if (/display:\s*none|visibility:\s*hidden/i.test(n.getAttribute('style') || '')) return false;
+    }
+    return true;
+  };
+  const formFields = firstForm ? firstForm.querySelectorAll('input, textarea, select').filter((i) => !/^(hidden|submit|button|image)$/i.test(i.getAttribute('type') || '')).filter(visibleToVisitor).length : 0;
   const formAt = firstForm ? bodyInner.indexOf(firstForm.outerHTML.slice(0, 120)) : -1;
   const formDepth = firstForm && formAt >= 0 && bodyInner.length ? Math.round((formAt / bodyInner.length) * 100) : null;
   const firstScreen = bodyInner.slice(0, Math.max(1200, Math.round(bodyInner.length * 0.15)));
