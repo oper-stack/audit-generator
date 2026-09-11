@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.1
+
+### Fixed
+- A honeypot, the invisible field a form uses to catch spam bots, was counted as a field the visitor has to fill. Inputs hidden from people (`tabindex="-1"`, an `aria-hidden` ancestor, a honeypot class or name, a container hidden in CSS) no longer count. Found by running the tool against our own site, where it inflated a four-field form to six.
+
 ## 0.3.0
 
 ### Added
