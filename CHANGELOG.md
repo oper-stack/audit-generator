@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.10.0
+
+### Added
+- **How much of the page is invisible without JavaScript.** The collector reads a page twice: once as a plain request, the way a crawler reads it, and once in a real browser. The difference is the text that only exists after scripts run, which means it does not exist for the fetchers that pull a page into an AI answer. `collect` does this by default from the CLI (`--no-rendered` turns it off, `--rendered-pages N` sets how many pages); the library keeps it off unless asked, so scheduled runs stay fast.
+- The verdict is proportional. Forty percent hidden, or a page that is nearly empty without scripts, is a failure and says the page is nearly empty to a robot. Ten to forty percent is a warning and says that part of the text does not reach them. Under ten percent passes.
+- Without Chrome or Chromium the check says it was not measured and why, rather than passing or failing on nothing.
+- The finding carries its own fix action and its own agent task, including the warning not to solve it by hiding text for robots, which is cloaking.
+
+### Note
+- Measured on two real sites while building it: a static site showed 14% (its interactive map is drawn by script), an editorial WordPress site showed 4%. Both are honest numbers rather than noise: the missing words were named and checked by hand.
+
 ## 0.9.0
 
 ### Added

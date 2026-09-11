@@ -40,8 +40,9 @@ const has = (k) => rest.includes(k);
 if (!cmd || cmd === '--help' || cmd === '-h') {
   console.log([
     'Usage:',
-    '  operstack-audit collect <url> [--pages 20] [--out audit.json] [--backlinks links.json] [--lang ru]',
-    '      collect the public signals of a site into audit.json',
+    '  operstack-audit collect <url> [--pages 20] [--out audit.json] [--lang ru] [--no-rendered]',
+    '      collect the public signals of a site into audit.json; a real browser also measures how',
+    '      much of the text is invisible without JavaScript (--no-rendered skips that)',
     '  operstack-audit render <audit.json> [--out report.html] [--pdf]',
     '      render the report; --pdf also prints a PDF with headless Chrome',
     '  operstack-audit draft <audit.json> [--lang ru|en] [--out audit.json]',
@@ -64,7 +65,14 @@ if (cmd === 'collect') {
   if (!/^https?:\/\//.test(target || '')) { console.error('collect needs an absolute URL'); process.exit(2); }
   const backlinksFile = opt('--backlinks', '');
   const backlinks = backlinksFile ? JSON.parse(readFileSync(resolve(backlinksFile), 'utf8')) : null;
-  const audit = await collect(target, { pages: Number(opt('--pages', 20)), backlinks, lang: opt('--lang', 'en'), log: (m) => console.error(`  ${m}`) });
+  // Проверка «виден ли текст без скриптов» требует браузера и добавляет полминуты на страницу.
+  // В платном аудите она нужна всегда: именно здесь мы можем соврать про чужой сайт. Выключается
+  // флагом --no-rendered, например когда браузера нет или прогон идёт по расписанию.
+  const audit = await collect(target, {
+    pages: Number(opt('--pages', 20)), backlinks, lang: opt('--lang', 'en'),
+    rendered: !has('--no-rendered'), renderedPages: Number(opt('--rendered-pages', 3)),
+    log: (m) => console.error(`  ${m}`),
+  });
   const out = resolve(opt('--out', 'audit.json'));
   writeFileSync(out, JSON.stringify(audit, null, 2));
   console.log(`wrote ${out}: ${audit.checks.length} checks, ${audit.sample.length} pages sampled, scores ${Object.entries(audit.scores).map(([k, v]) => `${k} ${v === null ? 'not measured' : v}`).join(', ')}`);

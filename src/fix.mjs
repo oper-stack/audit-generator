@@ -66,6 +66,7 @@ export const FIX_ACTIONS = {
   thin: { scope: 'client', why: { ru: 'наполнение тонких страниц это тексты по фактам клиента', en: 'filling thin pages means writing from your facts' } },
   sections: { scope: 'client', why: { ru: 'разбивка на разделы это переписывание текста', en: 'splitting into sections means rewriting the text' } },
   tables: { scope: 'client', why: { ru: 'таблица собирается из данных клиента', en: 'a table is built from your data' } },
+  'js-content': { scope: 'files', action: { ru: 'Отдавать текст страницы сразу в HTML, а не дорисовывать его скриптами: предрендер или серверная отрисовка тех страниц, где текст сейчас появляется только в браузере', en: 'Serve the page text in the HTML itself instead of drawing it with scripts: prerender or server-render the pages whose text currently appears only in a browser' } },
   'links-profile': { scope: 'never', why: { ru: 'данные по ссылкам платные и ни в одну оценку не входят', en: 'link data is paid, and it moves no score of ours' } },
 };
 

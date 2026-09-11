@@ -3,6 +3,7 @@
  * robots.txt, sitemaps, llms.txt, the homepage and a sample of pages from the sitemap.
  * No Search Console, no analytics. The narrative fields are left for the analyst.
  */
+import { renderedDom, compareReadings, jsBlindnessCheck } from './rendered.mjs';
 import { parse } from 'node-html-parser';
 import { localiseChecks } from './i18n.mjs';
 
@@ -162,7 +163,7 @@ async function readSitemap(url, seen = new Set(), depth = 0) {
   return out;
 }
 
-export async function collect(startUrl, { pages = 20, log = () => {}, backlinks = null, lang = 'en' } = {}) {
+export async function collect(startUrl, { pages = 20, log = () => {}, backlinks = null, lang = 'en', rendered = false, renderedPages = 3 } = {}) {
   const opts = { backlinks };
   const origin = new URL(startUrl).origin;
   const host = new URL(startUrl).host;
@@ -335,6 +336,25 @@ export async function collect(startUrl, { pages = 20, log = () => {}, backlinks 
 
   const { scores, scoreBasis } = computeScores(checks);
   // Оценки считаются до перевода: язык на цифры не влияет.
+  // Сколько текста не видно без выполнения скриптов. Меряется настоящим браузером и только по
+  // просьбе: запуск браузера это десятки секунд на страницу, и еженедельному мониторингу это ни к
+  // чему. Для платного аудита включено, потому что именно здесь мы можем соврать про чужой сайт.
+  if (rendered) {
+    const targets = [{ url: home.final, raw: home.response.ok ? home.response.text : '' },
+      ...good.filter((p) => p.url !== home.final).slice(0, Math.max(0, renderedPages - 1)).map((p) => ({ url: p.url, raw: '' }))];
+    const measured = [];
+    for (const t of targets) {
+      if (!t.url) continue;
+      log(`rendering ${t.url} in a real browser`);
+      const dom = renderedDom(t.url);
+      if (!dom) { log('no browser here, the JavaScript check will say it was not measured'); break; }
+      const rawHtml = t.raw || (await get(t.url)).text;
+      if (!rawHtml) continue;
+      measured.push({ url: t.url, ...compareReadings(rawHtml, dom) });
+    }
+    checks.push(jsBlindnessCheck(measured, lang));
+  }
+
   const localised = localiseChecks(checks, lang);
   const critical = checks.filter((c) => c.status === 'bad').map((c) => ({ title: c.label, text: `${c.value}${c.comment ? `. ${c.comment}` : ''}`, level: 'bad' }));
 
