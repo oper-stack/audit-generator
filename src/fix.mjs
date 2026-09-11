@@ -19,6 +19,7 @@
  * с английскими названиями проверок это брак, который клиент видит первым.
  */
 import { localiseChecks } from './i18n.mjs';
+import { agentPrompt } from './prompts.mjs';
 
 /** Что мы делаем по каждой проверке. Без этого «закроем» это слово, а не работа. */
 export const FIX_ACTIONS = {
@@ -220,14 +221,24 @@ export function renderFixPlan(plan) {
   return L.join('\n');
 }
 
-/** Чек-лист исполнителю: тот же список, но по порядку работы. */
-export function renderFixChecklist(plan) {
+/**
+ * Чек-лист исполнителю: тот же список, но по порядку работы.
+ * @param {object} plan результат buildFixPlan
+ * @param {{withPrompts?: boolean}} opts withPrompts добавляет задания для ИИ-агента: работа по ним
+ *   идёт быстрее, потому что исполнитель не переписывает задачу своими словами.
+ */
+export function renderFixChecklist(plan, opts = {}) {
   const t = dict(plan.lang);
   const L = [t.listTitle(plan.host), '', t.listHead(plan.platform, plan.price, plan.currency, plan.share), ''];
   plan.included.forEach((x, i) => {
     L.push(`- [ ] ${i + 1}. ${x.check.label} (\`${x.check.id}\`)`);
     L.push(`      ${t.was}: ${x.check.value}`);
     L.push(`      ${t.todo}: ${x.action}`);
+    if (opts.withPrompts) {
+      L.push('');
+      L.push(agentPrompt(x.check, { lang: plan.lang }).split('\n').map((line) => `      ${line}`).join('\n'));
+      L.push('');
+    }
   });
   L.push('');
   L.push(t.listTail);

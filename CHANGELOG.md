@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.9.0
+
+### Added
+- **Every finding comes out as a task an AI agent can execute.** `operstack-audit prompts audit.json` writes a Markdown file where each open check is rewritten as a job you paste into Cursor or Claude Code. Our buyers do not edit sites by hand; they tell an agent what to do. Until now we handed them a list of problems and left them to phrase the work themselves.
+- **Three parts in every task, because two is not enough.** Where it starts (the measured number, so the agent does not "fix" what is already whole), what to do (one action, with its boundaries), and how to know it is done. Tasks with no hand-written text still get all three: the action comes from the Fix table and the check line is "run the site check again; this finding must go and nothing else may get worse".
+- **The tasks refuse to invent.** Every one carries the rule that facts about the business are not to be made up, and the ones that could tempt an agent say it outright: do not choose a messenger the company may not use, do not guess a source link, do not invent the figure for an opening paragraph. Ask the owner and leave a marker.
+- **The Fix checklist can carry them too**: `renderFixChecklist(plan, { withPrompts: true })` puts each task under its line, so whoever does the work is not rephrasing it first.
+- Russian files built from an English audit translate the check names and values first.
+
 ## 0.8.0
 
 ### Added

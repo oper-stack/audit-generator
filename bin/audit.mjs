@@ -16,6 +16,8 @@
  *       the text work the Foundation package would do, page by page, with the price it adds up to
  *   operstack-audit draft audit.json [--lang ru|en] [--out audit.json]
  *       fills the narrative fields from the checks so the analyst edits instead of writing
+ *   operstack-audit prompts audit.json [--lang ru|en] [--limit 3] [--out prompts.md]
+ *       every finding rewritten as a task an AI agent can execute
  *   operstack-audit check audit.json
  *       lists narrative fields still holding placeholders and any score the checks do not support
  *
@@ -26,6 +28,7 @@ import { collect, verifyScores } from '../src/collect.mjs';
 import { buildFixPlan, renderFixPlan, renderFixChecklist, buildFixReport, renderFixReport } from '../src/fix.mjs';
 import { buildFoundationScope, renderFoundationScope, renderFoundationChecklist } from '../src/foundation.mjs';
 import { draftNarrative, stillEmpty } from '../src/narrative.mjs';
+import { renderAgentPrompts, agentPrompts } from '../src/prompts.mjs';
 import { render, checkNarrative } from '../src/render.mjs';
 import { writeFileSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -43,6 +46,8 @@ if (!cmd || cmd === '--help' || cmd === '-h') {
     '      render the report; --pdf also prints a PDF with headless Chrome',
     '  operstack-audit draft <audit.json> [--lang ru|en] [--out audit.json]',
     '      fill the narrative from the checks: the analyst edits a draft instead of writing one',
+    '  operstack-audit prompts <audit.json> [--lang ru|en] [--limit 3] [--out prompts.md]',
+    '      every finding rewritten as a task you can paste into Cursor or Claude Code',
     '  operstack-audit check <audit.json>',
     '      list narrative fields still holding placeholders and any score the checks do not support',
     '',
@@ -92,6 +97,15 @@ if (cmd === 'collect') {
   if (after.length) for (const f of after) console.log(`  still yours to write: ${f}`);
   console.log(`wrote ${out}`);
   console.log('read it before sending: the draft states only what was measured, and says so where nothing was.');
+} else if (cmd === 'prompts') {
+  const audit = JSON.parse(readFileSync(resolve(target), 'utf8'));
+  const lang = opt('--lang', audit.meta?.lang || 'en');
+  const limit = Number(opt('--limit', 0));
+  const list = agentPrompts(audit, { lang, limit });
+  const out = resolve(opt('--out', target.replace(/\.json$/, '') + '-prompts.md'));
+  writeFileSync(out, renderAgentPrompts(audit, { lang, limit }));
+  console.log(`${list.length} task(s): ${list.filter((x) => x.hasOwnText).length} written for that finding, ${list.filter((x) => !x.hasOwnText).length} generic`);
+  console.log(`wrote ${out}`);
 } else if (cmd === 'fix-plan') {
   const audit = JSON.parse(readFileSync(resolve(target), 'utf8'));
   // Язык покупки решает и валюту, и письмо: за доллары платят по английскому списку, за рубли по русскому.
