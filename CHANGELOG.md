@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.3
+
+### Fixed
+- **The contact, about and policy pages are read first.** They were left to the luck of sitemap order, so a 44 page site sampled 20 deep reported "no messenger, no contact page and no about page" while all three sat in the sitemap, unread. The pages the trust and conversion checks exist to look at are now always in the sample.
+- **A call to action is more than "contact us".** A link that says order, buy, get started, check your site, or points at an audit or pricing page is a call to action too. The check was counting only the words a support page uses.
+
 ## 0.3.2
 
 ### Fixed

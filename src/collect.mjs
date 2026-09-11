@@ -68,7 +68,7 @@ function analysePage(url, html) {
   // Conversion path, read from the page itself. No analytics is needed to see whether a visitor
   // who wants to talk to this business can find a way to do it, and how far down it is.
   const bodyInner = body?.innerHTML || html;
-  const CONTACT_INTENT = /contact|enquir|inquir|get in touch|request a|book a|call us|consult|get a quote|free quote|связ|заяв|консульт|оставить/i;
+  const CONTACT_INTENT = /contact|enquir|inquir|get in touch|request a|book a|call us|consult|get a quote|free quote|order (the|an|a|your)|buy |get started|start (here|free|now)|try it|check (your|a) site|audit|pricing|связ|заяв|консульт|оставить|закаж|закажите|купить|узнать цен|проверить сайт|начать/i;
   const hrefsLower = links.map((h) => h.toLowerCase());
   const telLinks = hrefsLower.filter((h) => h.startsWith('tel:')).length;
   const mailLinks = hrefsLower.filter((h) => h.startsWith('mailto:')).length;
@@ -212,7 +212,13 @@ export async function collect(startUrl, { pages = 20, log = () => {}, backlinks 
   log(`sampling up to ${pages} pages`);
   const norm = (u) => { try { const x = new URL(u); x.hash = ''; x.search = ''; if (!x.pathname.includes('.') && !x.pathname.endsWith('/')) x.pathname += '/'; return x.href.toLowerCase(); } catch { return u; } };
   const seenUrl = new Set([norm(home.final), norm(startUrl)]);
-  const pool = [home.final, ...sitemapPages.filter((u) => { const n = norm(u); if (seenUrl.has(n)) return false; seenUrl.add(n); return true; })];
+  const rest = sitemapPages.filter((u) => { const n = norm(u); if (seenUrl.has(n)) return false; seenUrl.add(n); return true; });
+  // The contact, about and policy pages are what the trust and conversion checks are about, so they
+  // are read first rather than left to the luck of sitemap order. A 44 page site sampled 20 deep was
+  // reporting "no messenger and no contact page" while both sat in the sitemap, unread.
+  const TRUST_PAGE = /\/(contact|contacts|contact-us|kontakt|kontakty|about|about-us|o-nas|team|company|privacy|privacy-policy|politika[a-z-]*|terms|terms-of-use|usloviya|oferta|legal|impressum)\/?$/i;
+  const trustFirst = rest.filter((u) => { try { return TRUST_PAGE.test(new URL(u).pathname); } catch { return false; } });
+  const pool = [home.final, ...trustFirst, ...rest.filter((u) => !trustFirst.includes(u))];
   const sample = [];
   for (const u of pool.slice(0, pages)) {
     const r = await get(u);
