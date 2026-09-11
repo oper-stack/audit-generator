@@ -58,6 +58,16 @@ npx @operstack/audit render audit.json --pdf
 
 Technically: `draft` fills the narrative fields (`summary`, `client.subject`, `overview.note`, `content`, `aeo`, `geo`, `offpage`, `conversion`, `roadmap`, `closing`) from the collected checks. Priorities and roadmap items are written as actions, taken from the same table the Fix checklist uses, so a finding and the work that closes it read the same. Fields an analyst has already written are left alone; anything still empty is listed at the end. For a Russian report over an English audit, check and area names are translated first.
 
+## Handing the work to an AI agent: `prompts`
+
+**If you do not edit the site yourself.** Most people who read an audit now fix their site by telling an AI assistant what to do. This turns every finding into a task written for that assistant: copy it, paste it into Cursor or Claude Code, and it does the work. Each task says what the state is today, what to change, and how you will know it is finished, so the assistant cannot wander off and cannot quietly invent facts about your business.
+
+```
+npx @operstack/audit prompts audit.json --lang en --limit 3
+```
+
+Technically: every open check is rendered as a Markdown block with `Now` (the measured value), `Task` (the action and its boundaries) and `How to check` (the acceptance test), plus a standing rule against inventing business facts. Twenty checks carry text written for that specific finding; the rest fall back to the Fix action with a generic acceptance test. `--limit 3` is what the free tier hands out; the full list ships with the paid audit. `renderFixChecklist(plan, { withPrompts: true })` embeds the same tasks in the executor checklist.
+
 ## The Fix package: turning findings into agreed work
 
 An audit says what is wrong. `fix-plan` says what we will do about it, before anyone pays.
