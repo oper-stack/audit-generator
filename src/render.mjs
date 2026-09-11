@@ -8,6 +8,7 @@ import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { computeScores } from './collect.mjs';
+import { localiseBasisNote, AREAS_RU } from './i18n.mjs';
 
 const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const isPlaceholder = (s) => typeof s === 'string' && /\{\{[^}]*\}\}/.test(s);
@@ -55,21 +56,8 @@ const LABELS = {
     secRoadmap: 'План работ', roadmapEyebrow: '10 · План', roadmapTitle: 'Что делать и в каком порядке', keyMessage: 'Главное сообщение:',
     runningHead: 'Аудит SEO, AEO и GEO',
     statusOk: '✓ Норма', statusWarn: '△ Частично', statusBad: '✗ Проблема', statusNa: '· Заметка',
-    areas: {
-      'SEO, technical': 'SEO, техническая часть',
-      'SEO, content and structure': 'SEO, контент и структура',
-      'AEO, answers and snippets': 'AEO, ответы и сниппеты',
-      'GEO, visibility in AI systems': 'GEO, видимость в системах ИИ',
-      'Off-page and trust': 'Ссылки и доверие',
-      'Conversion and UX': 'Конверсия и удобство',
-    },
-    basisNote: (b) => {
-      const w = (n, one, few, many) => { const d = n % 10, dd = n % 100; return n + ' ' + (d === 1 && dd !== 11 ? one : d >= 2 && d <= 4 && (dd < 10 || dd >= 20) ? few : many); };
-      const parts = [`${b.ok} из ${w(b.counted, 'проверки', 'проверок', 'проверок')} пройдено`];
-      if (b.warn) parts.push(`${w(b.warn, 'спорная', 'спорные', 'спорных')}`);
-      if (b.bad) parts.push(`${w(b.bad, 'провалена', 'провалены', 'провалено')}`);
-      return parts.join(', ');
-    },
+    areas: AREAS_RU,
+    basisNote: (b) => localiseBasisNote(`${b.ok} of ${b.counted} checks pass${b.warn ? `, ${b.warn} ${b.warn === 1 ? 'needs' : 'need'} attention` : ''}${b.bad ? `, ${b.bad} ${b.bad === 1 ? 'fails' : 'fail'}` : ''}`),
     notMeasuredReason: { 'Off-page and trust': 'данные по ссылкам и упоминаниям не собирались', 'Conversion and UX': 'сигналы конверсии не собирались' },
   },
 };

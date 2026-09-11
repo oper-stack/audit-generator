@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.0
+
+### Added
+- **`collect` speaks Russian.** `--lang ru` (or `{ lang: 'ru' }`) returns every check label, value and comment in Russian, with correct declension for counts. Scores are computed before the translation, so language cannot move a number.
+- `localiseChecks`, `localiseBasisNote`, `untranslated` and `AREAS_RU` are exported, from the package root and from `@operstack/audit/i18n`. `untranslated(checks)` lists any check the dictionary does not cover, so a gap shows up instead of silently staying English.
+- `computeScores`, `verifyScores` and `SCORE_AREAS` are now exported from the package root too.
+
+### Note
+- The translation is a layer on top of the collector: no check logic was touched, and `lang: 'en'` returns exactly what it returned before. Verified on 78 real checks from two sites: full coverage, no English left in Russian output, every figure preserved.
+
 ## 0.4.0
 
 ### Added

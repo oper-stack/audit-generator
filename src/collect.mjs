@@ -4,6 +4,7 @@
  * No Search Console, no analytics. The narrative fields are left for the analyst.
  */
 import { parse } from 'node-html-parser';
+import { localiseChecks } from './i18n.mjs';
 
 const UA = 'Mozilla/5.0 (compatible; OperStackAudit/0.1; +https://oper-stack.com)';
 
@@ -145,7 +146,7 @@ async function readSitemap(url, seen = new Set(), depth = 0) {
   return out;
 }
 
-export async function collect(startUrl, { pages = 20, log = () => {}, backlinks = null } = {}) {
+export async function collect(startUrl, { pages = 20, log = () => {}, backlinks = null, lang = 'en' } = {}) {
   const opts = { backlinks };
   const origin = new URL(startUrl).origin;
   const host = new URL(startUrl).host;
@@ -317,17 +318,19 @@ export async function collect(startUrl, { pages = 20, log = () => {}, backlinks 
   checks.push(row('conv-messenger', 'conversion', 'A messenger link', msg.length ? 'ok' : 'warn', msg.length ? `on ${msg.length} of ${pagesForTrust.length} sampled page(s)` : 'none on the sampled pages', msg.length ? '' : 'for an international audience reading on a phone, one messenger link is usually worth more than a form'));
 
   const { scores, scoreBasis } = computeScores(checks);
+  // Оценки считаются до перевода: язык на цифры не влияет.
+  const localised = localiseChecks(checks, lang);
   const critical = checks.filter((c) => c.status === 'bad').map((c) => ({ title: c.label, text: `${c.value}${c.comment ? `. ${c.comment}` : ''}`, level: 'bad' }));
 
   return {
-    meta: { site: home.final, host, collectedAt: new Date().toISOString(), tool: '@operstack/audit 0.1.0', auditType: 'External audit (no Search Console or analytics access)', language: hp ? (hp.og?.locale || '') : '' },
+    meta: { site: home.final, host, collectedAt: new Date().toISOString(), tool: '@operstack/audit 0.1.0', auditType: lang === 'ru' ? 'Аудит по публичным сигналам' : 'External audit (no Search Console or analytics access)', lang, language: hp ? (hp.og?.locale || '') : '' },
     client: { name: '{{CLIENT NAME}}', subject: '{{What the site sells and where}}', reportDate: new Date().toISOString().slice(0, 10), preparedBy: 'OperStack' },
     scores,
     scoreBasis,
     summary: { lead: '{{Three sentences: what the site is, what works, what holds it back.}}', verdict: '{{Key takeaway in three sentences, ending with how fast the critical issues can be fixed.}}', priorities: ['{{Priority one}}', '{{Priority two}}', '{{Priority three}}'] },
     overview: { rows: [['CMS / stack', hp?.generator || '{{stack}}'], ['Pages in sitemap', String(sitemapPages.length)], ['Language', '{{language}}'], ['What is sold', '{{products}}']], note: '{{One paragraph on how the offer is structured on the site and whether it is clear.}}' },
-    critical,
-    checks,
+    critical: lang === 'ru' ? localised.filter((c) => c.status === 'bad').map((c) => ({ title: c.label, text: `${c.value}${c.comment ? `. ${c.comment}` : ''}`, level: 'bad' })) : critical,
+    checks: localised,
     content: { strengths: ['{{strength}}'], weaknesses: ['{{weakness}}'], gaps: ['{{missing landing page or cluster}}'] },
     aeo: { works: ['{{what already works}}'], blocks: ['{{what blocks answer-engine wins}}'], recommendation: '{{One recommendation with a page name.}}' },
     geo: { rows: [['Entity clarity', '{{status}}', '{{detail}}'], ['Third-party mentions', '{{status}}', '{{detail}}'], ['Reviews and PR', '{{status}}', '{{detail}}']], callout: '{{Brand disambiguation note or the single biggest GEO risk.}}' },
