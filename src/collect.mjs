@@ -118,8 +118,17 @@ function analysePage(url, html) {
   const answerFirst = firstParaWords >= 20 && firstParaWords <= 90 && /\d/.test(firstPara);
   const h2Count = (bodyHtml.match(/<h2[\s>]/gi) || []).length;
   const tables = (bodyHtml.match(/<table[\s>]/gi) || []).length;
+  // A source is named either in words, or the way careful writing actually does it: a link to
+  // somebody else's site sitting in the same paragraph as the figure it backs.
   const sourcePhrases = (text.match(/\b(according to|source:|sources:|data from|reported by|published by|registry|statistics office|central bank)\b/gi) || []).length;
-  return { url, title, titleLength: title.length, description, descriptionLength: description.length, descriptionGarbage: shortcode, h1Count: h1s.length, h1: h1s[0] || '', images: imgs.length, imagesNoAlt: imgsNoAlt, canonical, robots, viewport, og, twitter, generator, hreflang, scripts, stylesheets, schemaTypes: [...new Set(schemaTypes)], words, links, dates, firstPara: firstPara.slice(0, 220), firstParaWords, answerFirst, h2Count, tables, sourcePhrases , telLinks, mailLinks, messengerLinks, contactPages, forms: realForms.length, formFields, formDepth, ctaFirstScreen, trust };
+  const ownHostname = (() => { try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return ''; } })();
+  const citedParagraphs = (bodyHtml.match(/<p[^>]*>[\s\S]*?<\/p>/gi) || []).filter((para) => {
+    if (!/\d/.test(plain(para))) return false;
+    return [...para.matchAll(/<a[^>]+href=["'](https?:\/\/[^"']+)["']/gi)].some((m) => {
+      try { return new URL(m[1]).hostname.replace(/^www\./, '') !== ownHostname; } catch { return false; }
+    });
+  }).length;
+  return { url, title, citedParagraphs, titleLength: title.length, description, descriptionLength: description.length, descriptionGarbage: shortcode, h1Count: h1s.length, h1: h1s[0] || '', images: imgs.length, imagesNoAlt: imgsNoAlt, canonical, robots, viewport, og, twitter, generator, hreflang, scripts, stylesheets, schemaTypes: [...new Set(schemaTypes)], words, links, dates, firstPara: firstPara.slice(0, 220), firstParaWords, answerFirst, h2Count, tables, sourcePhrases , telLinks, mailLinks, messengerLinks, contactPages, forms: realForms.length, formFields, formDepth, ctaFirstScreen, trust };
 }
 
 async function readSitemap(url, seen = new Set(), depth = 0) {
@@ -248,8 +257,8 @@ export async function collect(startUrl, { pages = 20, log = () => {}, backlinks 
     checks.push(row('sections', 'aeo', 'Section structure', structured === good.length ? 'ok' : structured ? 'warn' : 'bad', `${structured} of ${good.length} sampled page(s) carry three or more H2 sections`, structured === good.length ? '' : 'engines quote sections, not walls of text'));
     const withTables = good.filter((p) => p.tables > 0).length;
     checks.push(row('tables', 'aeo', 'Tables in the content', withTables ? 'ok' : 'warn', withTables ? `${withTables} of ${good.length} sampled page(s) use a table` : 'no table on the sampled pages', withTables ? '' : 'tables are the second most quoted format after the opening paragraph'));
-    const sourced = good.filter((p) => p.sourcePhrases > 0).length;
-    checks.push(row('sources', 'content', 'Sources named in the text', sourced === good.length ? 'ok' : sourced ? 'warn' : 'bad', `${sourced} of ${good.length} sampled page(s) name where a figure comes from`, sourced === good.length ? '' : 'an unsourced figure is the first thing an engine drops'));
+    const sourced = good.filter((p) => p.sourcePhrases > 0 || p.citedParagraphs > 0).length;
+    checks.push(row('sources', 'content', 'Sources named in the text', sourced === good.length ? 'ok' : sourced ? 'warn' : 'bad', `${sourced} of ${good.length} sampled page(s) name where a figure comes from, in words or as an outbound link beside the figure`, sourced === good.length ? '' : 'an unsourced figure is the first thing an engine drops'));
   }
   const dated = good.filter((p) => p.dates.modified || p.dates.published).length;
   if (good.length > 2) checks.push(row('dates', 'content', 'Publication dates exposed', dated ? 'ok' : 'warn', dated ? `${dated} of ${good.length} sampled pages expose dates` : 'no article dates in the sample: answer engines cannot tell what is current'));
@@ -268,8 +277,13 @@ export async function collect(startUrl, { pages = 20, log = () => {}, backlinks 
   }
   const addr = anyTrust((p) => p.trust?.postalAddress);
   checks.push(row('trust-entity', 'offpage', 'Who the business is, in machine-readable form', addr ? 'ok' : 'warn', addr ? 'a postal address is published in the structured data' : 'no postal address in the structured data', addr ? '' : 'rating systems and answer engines use it to tell one business from another'));
-  const tel = anyTrust((p) => p.trust?.telephone); const mail = anyTrust((p) => p.trust?.email);
-  checks.push(row('trust-contact', 'offpage', 'Direct contact details', tel && mail ? 'ok' : tel || mail ? 'warn' : 'bad', [tel ? 'phone' : '', mail ? 'email' : ''].filter(Boolean).join(' and ') || 'neither a phone nor an email is published'));
+  // A published messenger is a direct channel like any other. Counting only phone and email would
+  // mark a business that answers on Telegram all day as unreachable.
+  const tel = anyTrust((p) => p.trust?.telephone);
+  const mail = anyTrust((p) => p.trust?.email);
+  const msgr = anyTrust((p) => p.messengerLinks > 0);
+  const channels = [tel ? 'phone' : '', mail ? 'email' : '', msgr ? 'a messenger' : ''].filter(Boolean);
+  checks.push(row('trust-contact', 'offpage', 'Direct contact details', channels.length >= 2 ? 'ok' : channels.length ? 'warn' : 'bad', channels.length ? channels.join(' and ') : 'no phone, email or messenger is published'));
   const ownHost = host.replace(/^www\./, '');
   const profiles = [...new Set(pagesForTrust.flatMap((p) => p.trust?.sameAs || []))].filter((h) => h !== ownHost && !h.endsWith(`.${ownHost}`));
   checks.push(row('trust-profiles', 'offpage', 'Profiles the site claims elsewhere', profiles.length >= 2 ? 'ok' : profiles.length ? 'warn' : 'bad', profiles.length ? `${profiles.length}: ${profiles.slice(0, 5).join(', ')}` : 'no sameAs links: the site claims no profile anywhere else', profiles.length ? '' : 'the cheapest off-site signal there is, and it is free'));

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.2
+
+### Fixed
+- **A citation was only recognised in words.** A paragraph that names a source properly, with an outbound link beside the figure it backs, did not count. It does now. Found on a corpus that cites Harvard Business Review and MIT with links on nearly every page and was scored as naming no sources at all.
+- **A messenger is a direct contact channel.** The contact check counted only a phone and an email, so a business that answers on Telegram all day read as unreachable. Any two published channels of phone, email and messenger now pass.
+
 ## 0.3.1
 
 ### Fixed
