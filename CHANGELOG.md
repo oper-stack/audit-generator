@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.12.0
+
+### Added
+- **llms.txt is checked for where it leads, not only for existing.** A sample of up to twenty of its own links is fetched: anything dead, redirecting or closed to indexing is reported. An answer engine reads this file instead of crawling the site, so a stale entry is a page it will quote wrongly or not quote at all, and the file drifts silently because nobody opens those URLs by hand.
+- The finding carries its own Russian wording, its fix action and its agent task. The task says to fix the generator rather than the file when the file is built at deploy time, because otherwise it drifts again on the next deploy.
+
 ## 0.11.0
 
 ### Added

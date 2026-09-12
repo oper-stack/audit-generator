@@ -229,6 +229,34 @@ export async function collect(startUrl, { pages = 20, log = () => {}, backlinks 
     !llms.ok ? 'not present' : !llmsIsText ? 'answers with an HTML page, not a text index' : `${llmsLinks.length} link(s), ${llmsForeign.length} to other hosts`,
     !llms.ok ? 'answer engines get nothing to read; a generated index is a one-day job' : llmsForeign.length > 3 ? `links to ${[...new Set(llmsForeign.map((u) => new URL(u).host))].slice(0, 3).join(', ')}: an AI system may misidentify the business` : ''));
 
+  // Здоровье llms.txt: мы проверяем не только то, что файл есть, но и то, что он ведёт в живые
+  // страницы. Индекс для ИИ разъезжается тихо: страницу переименовали, закрыли от индексации или
+  // удалили, а в индексе она осталась, и ИИ идёт цитировать редирект или пустоту. Проверяем
+  // выборку своих ссылок, а не все: на большом сайте их тысячи, а беда видна и по двадцати.
+  const llmsOwn = llmsLinks.filter((u) => { try { const h = new URL(u).host; return h === host || h === altHost; } catch { return false; } });
+  if (llmsOwn.length) {
+    const sampleSize = Math.min(20, llmsOwn.length);
+    const step = Math.max(1, Math.floor(llmsOwn.length / sampleSize));
+    const picked = llmsOwn.filter((_, i) => i % step === 0).slice(0, sampleSize);
+    const broken = [];
+    const redirected = [];
+    const closed = [];
+    for (const u of picked) {
+      const r = await get(u);
+      if (r.status >= 300 && r.status < 400) { redirected.push(u); continue; }
+      if (!r.ok) { broken.push(u); continue; }
+      if (/<meta[^>]+name=["\']robots["\'][^>]+noindex/i.test(r.text || '')) closed.push(u);
+    }
+    const sick = broken.length + redirected.length + closed.length;
+    const parts = [];
+    if (broken.length) parts.push(`${broken.length} dead`);
+    if (redirected.length) parts.push(`${redirected.length} redirecting`);
+    if (closed.length) parts.push(`${closed.length} closed to indexing`);
+    checks.push(row('llms-health', 'geo', 'Pages listed in llms.txt', sick > picked.length / 4 ? 'bad' : sick ? 'warn' : 'ok',
+      sick ? `${parts.join(', ')} of ${picked.length} checked: ${[...broken, ...redirected, ...closed][0]}` : `all ${picked.length} checked page(s) answer and are open to indexing`,
+      sick ? 'an answer engine reads this file instead of crawling: every dead or closed entry is a page it will quote wrongly or not at all' : ''));
+  }
+
   // Агентная поверхность: карточки, по которым ИИ-агент понимает, с чем имеет дело и что тут можно
   // вызвать. Стандарты молодые, поэтому отсутствие это не провал, а предупреждение, и в тексте
   // прямо сказано, что это раннее и необязательное. Врать про обязательность мы не будем.
