@@ -11,6 +11,7 @@ import { resolve, join } from 'node:path';
 import { collect } from './collect.mjs';
 import { render } from './render.mjs';
 import { draftNarrative as draft } from './narrative.mjs';
+import { prospectRow, toCsv, toMarkdown } from './prospect.mjs';
 
 /** Строки списка: адрес и, через запятую, имя клиента для обложки. Пустые строки и # игнорируются. */
 export function parseList(text) {
@@ -80,3 +81,27 @@ export function summarise(results) {
 export function readList(path) {
   return parseList(readFileSync(resolve(path), 'utf8'));
 }
+
+/**
+ * Разведка: те же проверки, но без отчётов. Нужен ответ «кому писать первым», а не двадцать PDF,
+ * поэтому здесь не собирается ни черновик, ни вёрстка: только замер и таблица.
+ */
+export async function runProspect(items, { pages = 8, lang = 'en', log = () => {} } = {}) {
+  const rows = [];
+  const failed = [];
+  for (const [i, item] of items.entries()) {
+    const label = `${i + 1}/${items.length} ${item.url}`;
+    if (item.invalid) { failed.push({ ...item, reason: 'not a valid address' }); log(`${label}: пропущен`); continue; }
+    try {
+      log(`${label}: проверяю`);
+      const audit = await collect(item.url, { pages, lang, rendered: false });
+      rows.push(prospectRow(audit, { name: item.name, lang }));
+    } catch (err) {
+      failed.push({ ...item, reason: err.message });
+      log(`${label}: не вышло, ${err.message}`);
+    }
+  }
+  return { rows, failed };
+}
+
+export { toCsv, toMarkdown };

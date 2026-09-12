@@ -31,7 +31,7 @@ import { draftNarrative, stillEmpty } from '../src/narrative.mjs';
 import { renderAgentPrompts, agentPrompts } from '../src/prompts.mjs';
 import { render, checkNarrative } from '../src/render.mjs';
 import { resolveBranding } from '../src/agency.mjs';
-import { readList, runBatch, summarise } from '../src/batch.mjs';
+import { readList, runBatch, runProspect, summarise, toCsv, toMarkdown } from '../src/batch.mjs';
 import { writeFileSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
@@ -61,6 +61,8 @@ if (!cmd || cmd === '--help' || cmd === '-h') {
     '  operstack-audit foundation-scope <audit.json> [--lang ru|en] [--new-pages 3] [--gsc] [--price] [--out base]',
     '      the text work the Foundation package would do, page by page; --price also states the money',
     '',
+    '  operstack-audit prospect <sites.txt> [--out prospects] [--pages 8] [--lang en|ru]',
+    '      who to write to first: one table, weakest site at the top, with a line to open the email',
     '  operstack-audit batch <sites.txt> [--out reports] [--pages 12] [--lang en|ru] [--pdf] [brand flags]',
     '      one report per line of the list; a line is "url" or "url, Client Name"',
     '',
@@ -95,6 +97,18 @@ if (cmd === 'collect') {
   writeFileSync(out, JSON.stringify(audit, null, 2));
   console.log(`wrote ${out}: ${audit.checks.length} checks, ${audit.sample.length} pages sampled, scores ${Object.entries(audit.scores).map(([k, v]) => `${k} ${v === null ? 'not measured' : v}`).join(', ')}`);
   console.log(`next: fill the narrative fields (operstack-audit check ${out} lists them), then render.`);
+} else if (cmd === 'prospect') {
+  const items = readList(target);
+  if (!items.length) { console.error('the list is empty'); process.exit(2); }
+  const lang = opt('--lang', 'en');
+  console.error(`${items.length} site(s) to check`);
+  const { rows, failed } = await runProspect(items, { pages: Number(opt('--pages', 8)), lang, log: (m) => console.error(`  ${m}`) });
+  if (!rows.length) { console.error('nothing could be checked'); process.exit(1); }
+  const base = resolve(opt('--out', 'prospects'));
+  writeFileSync(`${base}.csv`, toCsv(rows));
+  writeFileSync(`${base}.md`, toMarkdown(rows));
+  for (const f of failed) console.error(`  skipped ${f.url}: ${f.reason}`);
+  console.log(`wrote ${base}.csv and ${base}.md: ${rows.length} site(s), weakest first`);
 } else if (cmd === 'batch') {
   const brand = brandFrom(opt, has);
   const items = readList(target);

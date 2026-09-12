@@ -166,3 +166,20 @@ report lands in `reports/`, and a site that fails does not stop the rest.
 The key goes in `--licence`, in `OPERSTACK_LICENCE`, or in a `.operstack-licence` file beside the
 work. This package is MIT and its source is public, so the key states the terms of commercial use
 and records who bought them; it is not a technical lock. Plan: https://oper-stack.com/products/agency/
+
+## Who to write to first
+
+`prospect` answers the question a batch of reports does not: of twenty sites, which one has the
+worst problem and what do you say in the first line of the email.
+
+```
+operstack-audit prospect clients.txt --out prospects
+```
+
+Out comes `prospects.csv` and `prospects.md`: one row per site, weakest first, with the two or
+three open findings and one sentence written for a business owner rather than for an engineer.
+Every sentence is a translation of a check that measured something; where there is no translation,
+the raw finding is printed instead of an invention.
+
+It runs the same checks as the report but skips the writing and the layout, so twenty sites take
+minutes. Free, no licence needed.

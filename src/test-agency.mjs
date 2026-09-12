@@ -82,5 +82,51 @@ const { findKey } = await import('./agency.mjs');
 ok('ключ читается из файла .operstack-licence', findKey().startsWith('OSK1.'));
 process.chdir(cwd);
 
+
+// ── Разведка кандидатов ───────────────────────────────────────────────────────
+// Правило: в письмо никогда не попадает строка, которую владелец бизнеса не поймёт, и
+// ни одна фраза не ссылается на проверку, которой в сборщике нет.
+const { OWNER_LINES, overallScore, prospectRow, rank, toCsv, toMarkdown } = await import('./prospect.mjs');
+const { CHECK_IDS } = await import('./test-agency-ids.mjs');
+
+const unknown = Object.keys(OWNER_LINES).filter((id) => !CHECK_IDS.includes(id));
+ok('каждая фраза ссылается на существующую проверку', unknown.length === 0);
+ok('у каждой фразы есть оба языка', Object.values(OWNER_LINES).every((v) => v.en && v.ru));
+
+ok('неизмеренная область не тянет оценку вниз', overallScore({ a: 10, b: null }) === 100);
+ok('пустые оценки дают не ноль, а «не измеряли»', overallScore({}) === null);
+
+const mk = (id, status, scores) => ({
+  meta: { host: `${id}.example` }, client: { name: id }, scores,
+  checks: [{ id, group: 'x', label: 'L', status, value: 'v' }],
+});
+const weak = prospectRow(mk('ai-search-access', 'fail', { a: 2 }));
+ok('перекрытый доступ роботов ИИ попадает в письмо', /ChatGPT/.test(weak.say));
+ok('провал посчитан', weak.failing === 1 && weak.warning === 0);
+
+const dull = prospectRow(mk('utility', 'warn', { a: 9 }));
+const sharp = prospectRow({
+  meta: { host: 'x.example' }, client: { name: 'x' }, scores: { a: 5 },
+  checks: [
+    { id: 'utility', group: 'x', label: 'L', status: 'warn', value: 'v' },
+    { id: 'ai-search-access', group: 'x', label: 'L', status: 'warn', value: 'v' },
+  ],
+});
+ok('при равной тяжести в письмо идёт сильная находка, а не первая', /ChatGPT/.test(sharp.say));
+ok('слабая находка всё равно объяснена по-человечески', !/^utility/.test(dull.say));
+
+const ranked = rank([prospectRow(mk('alt', 'warn', { a: 9 })), weak, { ...dull, score: null }]);
+ok('сначала идёт тот, у кого хуже', ranked[0].score < ranked[1].score);
+ok('сайт без оценки уходит в конец, а не наверх', ranked[ranked.length - 1].score === null);
+
+const csv = toCsv([weak]);
+ok('в CSV есть заголовок и строка', csv.split('\n').length === 2 && csv.startsWith('site,name,score'));
+ok('запятая внутри фразы не ломает CSV', toCsv([{ ...weak, say: 'a, b' }]).includes('"a, b"'));
+ok('в таблице сказано, что строки измерены, а не придуманы', /measured check, not an opinion/.test(toMarkdown([weak])));
+
+const russian = prospectRow(mk('ai-search-access', 'fail', { a: 2 }), { lang: 'ru' });
+ok('русская фраза приходит по-русски', /Perplexity не могут/.test(russian.say));
+
+
 console.log(failed ? `\n${failed} проверок не прошли` : '\nагентский план: лицензия, оформление и список проверены');
 process.exit(failed ? 1 : 0);
