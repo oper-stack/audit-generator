@@ -16,7 +16,9 @@ async function get(url, { method = 'GET', timeout = 15000 } = {}) {
     const res = await fetch(url, { method, redirect: 'manual', signal: c.signal, headers: { 'user-agent': UA, accept: 'text/html,application/xml,text/plain,*/*' } });
     const ttfb = Date.now() - started;
     const text = method === 'GET' ? await res.text() : '';
-    return { ok: res.ok, status: res.status, location: res.headers.get('location'), type: res.headers.get('content-type') || '', text, ttfb, url };
+    // Заголовок Link нужен проверке «есть ли markdown-версия страницы»: им сайт говорит агенту,
+    // где лежит текстовая копия. Возвращаем его сразу, чтобы не ходить за страницей второй раз.
+    return { ok: res.ok, status: res.status, location: res.headers.get('location'), type: res.headers.get('content-type') || '', link: res.headers.get('link') || '', text, ttfb, url };
   } catch (e) { return { ok: false, status: 0, error: e.name === 'AbortError' ? 'timeout' : e.message, text: '', ttfb: Date.now() - started, url }; }
   finally { clearTimeout(t); }
 }
@@ -226,6 +228,30 @@ export async function collect(startUrl, { pages = 20, log = () => {}, backlinks 
   checks.push(row('llms', 'geo', 'llms.txt', !llms.ok ? 'warn' : !llmsIsText ? 'bad' : llmsForeign.length > llmsLinks.length / 2 && llmsLinks.length > 3 ? 'bad' : 'ok',
     !llms.ok ? 'not present' : !llmsIsText ? 'answers with an HTML page, not a text index' : `${llmsLinks.length} link(s), ${llmsForeign.length} to other hosts`,
     !llms.ok ? 'answer engines get nothing to read; a generated index is a one-day job' : llmsForeign.length > 3 ? `links to ${[...new Set(llmsForeign.map((u) => new URL(u).host))].slice(0, 3).join(', ')}: an AI system may misidentify the business` : ''));
+
+  // Агентная поверхность: карточки, по которым ИИ-агент понимает, с чем имеет дело и что тут можно
+  // вызвать. Стандарты молодые, поэтому отсутствие это не провал, а предупреждение, и в тексте
+  // прямо сказано, что это раннее и необязательное. Врать про обязательность мы не будем.
+  log('agent surface');
+  const agentCard = await get(`${origin}/.well-known/agent.json`);
+  const agentCardOk = agentCard.ok && /^\s*\{/.test(agentCard.text || '');
+  checks.push(row('agent-card', 'geo', 'Agent card (/.well-known/agent.json)', agentCardOk ? 'ok' : 'warn',
+    agentCardOk ? 'present and valid JSON' : agentCard.ok ? 'present but not JSON' : 'not present',
+    agentCardOk ? '' : 'an early, optional standard: it is the file agent directories read to learn who you are and what you offer'));
+
+  const apiCatalog = await get(`${origin}/.well-known/api-catalog`);
+  checks.push(row('api-catalog', 'geo', 'API catalogue (RFC 9727)', apiCatalog.ok ? 'ok' : 'warn',
+    apiCatalog.ok ? 'present' : 'not present',
+    apiCatalog.ok ? '' : 'optional, and only worth adding when the business actually exposes an API for agents to call'));
+
+  // Markdown-версия страницы: её просят агенты, которым HTML мешает. Признаём оба способа,
+  // заголовок Link и файл рядом со страницей, потому что оба встречаются.
+  const homeMd = await get(`${home.final.replace(/\/$/, '')}/index.md`);
+  const linkHeader = String(home.response.link || '');
+  const mdOk = (homeMd.ok && !/<html/i.test((homeMd.text || '').slice(0, 300))) || /text\/markdown/i.test(linkHeader);
+  checks.push(row('agent-markdown', 'geo', 'Markdown version of the pages', mdOk ? 'ok' : 'warn',
+    mdOk ? (/text\/markdown/i.test(linkHeader) ? 'offered through the Link header' : 'served next to the page') : 'not offered',
+    mdOk ? '' : 'an agent that asks for text/markdown gets HTML and has to strip it: giving it markdown is cheap and removes the guesswork'));
 
   log(`sampling up to ${pages} pages`);
   const norm = (u) => { try { const x = new URL(u); x.hash = ''; x.search = ''; if (!x.pathname.includes('.') && !x.pathname.endsWith('/')) x.pathname += '/'; return x.href.toLowerCase(); } catch { return u; } };
