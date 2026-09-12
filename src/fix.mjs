@@ -66,6 +66,9 @@ export const FIX_ACTIONS = {
   thin: { scope: 'client', why: { ru: 'наполнение тонких страниц это тексты по фактам клиента', en: 'filling thin pages means writing from your facts' } },
   sections: { scope: 'client', why: { ru: 'разбивка на разделы это переписывание текста', en: 'splitting into sections means rewriting the text' } },
   tables: { scope: 'client', why: { ru: 'таблица собирается из данных клиента', en: 'a table is built from your data' } },
+  'agent-card': { scope: 'always', action: { ru: 'Положить в /.well-known/agent.json карточку с названием компании, одной строкой о том, чем она занимается, адресом сайта и способом связи', en: 'Put an agent card at /.well-known/agent.json with the company name, one line on what it does, the site address and a way to get in touch' } },
+  'api-catalog': { scope: 'never', why: { ru: 'нужен только тем, у кого есть API для агентов, выдумывать его ради галочки незачем', en: 'only for a business that actually exposes an API for agents; inventing one for the sake of a tick is pointless' } },
+  'agent-markdown': { scope: 'files', action: { ru: 'Отдавать markdown-версию каждой страницы и объявлять её заголовком Link рядом с HTML', en: 'Serve a markdown version of every page and declare it with a Link header beside the HTML' } },
   'js-content': { scope: 'files', action: { ru: 'Отдавать текст страницы сразу в HTML, а не дорисовывать его скриптами: предрендер или серверная отрисовка тех страниц, где текст сейчас появляется только в браузере', en: 'Serve the page text in the HTML itself instead of drawing it with scripts: prerender or server-render the pages whose text currently appears only in a browser' } },
   'links-profile': { scope: 'never', why: { ru: 'данные по ссылкам платные и ни в одну оценку не входят', en: 'link data is paid, and it moves no score of ours' } },
 };

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.11.0
+
+### Added
+- **Three checks for the agent surface**, the files an AI agent reads to learn what a site is and what can be called on it: the agent card at `/.well-known/agent.json`, the API catalogue of RFC 9727, and whether the pages offer a markdown version (through a `Link` header or a file beside the page).
+- Absent means a warning, never a failure, and the report says why: these are early, optional standards. The API catalogue is explicitly not promised as work, because it only makes sense for a business that really exposes an API; inventing one for the sake of a tick is pointless, and the fix table says so.
+- Each of the three carries its own Russian wording, its own fix action and its own agent task. The agent-card task forbids listing a capability the business does not have, because agent directories read that file and an invented capability becomes a complaint.
+- `get()` now returns the `Link` header, so the markdown check costs no extra request.
+
 ## 0.10.0
 
 ### Added

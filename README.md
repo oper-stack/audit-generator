@@ -46,6 +46,19 @@ An agent can fill these fields from the JSON: the Claude Code plugin `operstack-
 
 Ten A4 pages: cover, executive summary with a scorecard, site overview with the sampled pages, critical issues, technical and on-page checklist, content and structure, AEO and GEO, off-page and conversion and limitations, roadmap in three phases, closing message. HTML always; PDF with `--pdf` when Chrome or Chromium is installed (`CHROME_PATH` overrides the lookup).
 
+## The agent surface
+
+**In plain words.** Assistants like ChatGPT and Claude are starting to read a couple of small files
+to work out what a site is and what it can do, the way a search engine reads robots.txt. Almost
+nobody has them yet, which is exactly why having them is cheap and noticeable. These checks say
+whether yours exist, and they are honest about it being early days: a missing file is a note, not a
+failure.
+
+**What it checks.** `/.well-known/agent.json` (the agent card: who you are, what you offer, how to
+reach you), `/.well-known/api-catalog` per RFC 9727, and whether a page offers a markdown version,
+either through a `Link` header or as a file beside it. The API catalogue is deliberately never
+offered as work: it belongs to a business that actually exposes an API.
+
 ## What an AI does not see: the JavaScript check
 
 **In plain words.** Some sites draw themselves with scripts. A person opens the page and sees the
