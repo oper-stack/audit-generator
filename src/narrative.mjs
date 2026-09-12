@@ -123,6 +123,9 @@ const open = (c) => c && (c.status === 'warn' || c.status === 'bad');
  * @param {object} audit результат collect()
  * @param {{lang?: 'ru'|'en'}} opts
  */
+/** Проверки, которые закрывает только текст клиента: у них есть своя формулировка работы. */
+const TEXT_WORK_IDS = new Set(['thin', 'answer-first', 'sources', 'sections', 'tables']);
+
 export function draftNarrative(audit, opts = {}) {
   const lang = opts.lang || audit.meta?.lang || 'en';
   const t = T[lang === 'ru' ? 'ru' : 'en'];
@@ -169,7 +172,14 @@ export function draftNarrative(audit, opts = {}) {
     return c.label;
   };
   const action = (c) => `${actionText(c)}. ${lang === 'ru' ? 'Сейчас' : 'Now'}: ${c.value}`;
-  const top = [...bad, ...warn].slice(0, 3);
+  // В приоритеты идут только те находки, для которых есть действие. У части проверок в FIX_ACTIONS
+  // вместо действия стоит довод против («это имеет смысл только тем, у кого правда есть API»), и
+  // такая строка первым пунктом плана читается как отговорка, а не как задача.
+  const actionable = (c) => {
+    const rule = FIX_ACTIONS[c.id];
+    return Boolean((rule && rule.action) || TEXT_WORK_IDS.has(c.id));
+  };
+  const top = [...bad.filter(actionable), ...warn.filter(actionable), ...bad.filter((c) => !actionable(c)), ...warn.filter((c) => !actionable(c))].slice(0, 3);
   a.summary.priorities = (a.summary.priorities || []).map((p, i) => {
     if (!String(p).includes('{{')) return p;
     const c = top[i];

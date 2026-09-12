@@ -20,7 +20,11 @@ ok('статусы не тронуты', ru.every((c, i) => c.status === all[i].
 ok('идентификаторы не тронуты', ru.every((c, i) => c.id === all[i].id));
 
 // в русском тексте не должно остаться английских слов, кроме технических имён
-const TECH = /https?|robots\.txt|llms\.txt|sitemap|xmlrpc|HTTP|HTTPS|H1|H2|og:|twitter:|JSON-LD|FAQPage|Organization|WebSite|Article|LocalBusiness|viewport|width|initial-scale|device-width|user-scalable|maximum-scale|Disallow|User-agent|gptbot|google-extended|ccbot|anthropic-ai|claudebot|applebot-extended|facebookbot|meta-externalagent|bytespider|oai-searchbot|chatgpt-user|perplexitybot|claude-searchbot|duckassistbot|applebot|sameAs|com|ru|org|io|me|net|dev|github|npmjs|apify|producthunt|wikidata|moregroup|estate|Content|Type|Cache|Control|OperStack|SEO|AEO|GEO|AI|XML|CMS|PDF|URL/gi;
+// Технические имена, которые обязаны остаться латиницей. Границы слова здесь не украшение:
+// без них \bio\b съедало «io» внутри description, а Estate внутри RealEstateAgent, и тест
+// докладывал о несуществующих английских хвостах вроде «descriptn» и «RealAgent».
+const SCHEMA_TYPES = 'RealEstateAgent|Corporation|BreadcrumbList|WebPage|Product|Service|Place|Person|ItemList|HowTo|QAPage|NewsArticle|BlogPosting|CollectionPage|AboutPage|ContactPage|SoftwareApplication';
+const TECH = new RegExp(`\\b(?:https?|robots\.txt|llms\.txt|sitemap|xmlrpc|HTTP|HTTPS|H1|H2|og:|twitter:|JSON-LD|FAQPage|Organization|WebSite|Article|LocalBusiness|viewport|width|initial-scale|device-width|user-scalable|maximum-scale|Disallow|User-agent|gptbot|google-extended|ccbot|anthropic-ai|claudebot|applebot-extended|facebookbot|meta-externalagent|bytespider|oai-searchbot|chatgpt-user|perplexitybot|claude-searchbot|duckassistbot|applebot|sameAs|com|ru|org|io|me|net|dev|github|npmjs|apify|producthunt|wikidata|moregroup|estate|Content|Type|Cache|Control|OperStack|SEO|AEO|GEO|AI|XML|CMS|PDF|URL|${SCHEMA_TYPES})\\b`, 'gi');
 const leftovers = [];
 for (const c of ru) {
   for (const field of ['label', 'value', 'comment']) {
@@ -36,11 +40,12 @@ for (const c of ru) {
 is('английских слов в русском тексте не осталось', leftovers, []);
 
 // числа не потерялись
-const digits = (s) => (String(s).match(/\d+/g) || []).join(',');
+// Английские тысячи пишутся через запятую, русские слитно: 1,600 и 1600 это одно число.
+const digits = (s) => (String(s).replace(/,(?=\d{3}\b)/g, '').match(/\d+/g) || []).join('|');
 const lostNumbers = ru.filter((c, i) => {
   const before = digits(all[i].value);
   const after = digits(c.value);
-  return before && after && before.split(',').some((n) => !after.split(',').includes(n));
+  return before && after && before.split('|').some((n) => !after.split('|').includes(n));
 }).map((c) => `${c.id}: было ${digits(all[all.findIndex((x) => x.id === c.id)].value)}, стало ${digits(c.value)}`);
 is('числа в тексте сохранились', lostNumbers, []);
 

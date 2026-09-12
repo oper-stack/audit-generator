@@ -3,11 +3,21 @@
  * robots.txt, sitemaps, llms.txt, the homepage and a sample of pages from the sitemap.
  * No Search Console, no analytics. The narrative fields are left for the analyst.
  */
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { renderedDom, compareReadings, jsBlindnessCheck } from './rendered.mjs';
 import { parse } from 'node-html-parser';
 import { localiseChecks } from './i18n.mjs';
 
-const UA = 'Mozilla/5.0 (compatible; OperStackAudit/0.1; +https://oper-stack.com)';
+/** Версия читается из своего package.json. Зашитая строка врала в каждом отчёте с первого релиза:
+ *  в подвале стояло 0.1.0, когда пакет был уже 0.12.0, и покупатель не мог понять, чем его мерили. */
+const VERSION = (() => {
+  try { return JSON.parse(readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), '..', 'package.json'), 'utf8')).version; }
+  catch { return '0'; }
+})();
+
+const UA = `Mozilla/5.0 (compatible; OperStackAudit/${VERSION}; +https://oper-stack.com)`;
 
 async function get(url, { method = 'GET', timeout = 15000 } = {}) {
   const c = new AbortController(); const t = setTimeout(() => c.abort(), timeout);
@@ -413,7 +423,7 @@ export async function collect(startUrl, { pages = 20, log = () => {}, backlinks 
   const critical = checks.filter((c) => c.status === 'bad').map((c) => ({ title: c.label, text: `${c.value}${c.comment ? `. ${c.comment}` : ''}`, level: 'bad' }));
 
   return {
-    meta: { site: home.final, host, collectedAt: new Date().toISOString(), tool: '@operstack/audit 0.1.0', auditType: lang === 'ru' ? 'Аудит по публичным сигналам' : 'External audit (no Search Console or analytics access)', lang, language: hp ? (hp.og?.locale || '') : '' },
+    meta: { site: home.final, host, collectedAt: new Date().toISOString(), tool: `@operstack/audit ${VERSION}`, auditType: lang === 'ru' ? 'Аудит по публичным сигналам' : 'External audit (no Search Console or analytics access)', lang, language: hp ? (hp.og?.locale || '') : '' },
     client: { name: '{{CLIENT NAME}}', subject: '{{What the site sells and where}}', reportDate: new Date().toISOString().slice(0, 10), preparedBy: 'OperStack' },
     scores,
     scoreBasis,

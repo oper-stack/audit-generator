@@ -10,8 +10,10 @@
  *   audit.checks = localiseChecks(audit.checks, 'ru')
  */
 
-/** Достаёт все целые и дробные числа из строки по порядку. */
-const nums = (s) => (String(s).match(/\d+(?:[.,]\d+)?/g) || []).map((x) => x.replace(',', '.'));
+/** Достаёт все целые и дробные числа из строки по порядку.
+ *  Сборщик пишет по-английски, и там запятая это разделитель тысяч: «median 1,600 words».
+ *  Пока её принимали за дробную часть, 1600 слов превращались в 1,6 и уезжали в отчёт покупателю. */
+const nums = (s) => (String(s).match(/\d+(?:[.,]\d{3})*(?:\.\d+)?/g) || []).map((x) => x.replace(/,(?=\d{3}\b)/g, ''));
 /** Склонение: 1 страница, 2 страницы, 5 страниц. */
 const plural = (n, one, few, many) => {
   const d = Math.abs(n) % 10; const dd = Math.abs(n) % 100;
@@ -78,12 +80,12 @@ const RU = {
         : `${plural(Number(nums(v)[0]), 'ссылка', 'ссылки', 'ссылок')}, ${nums(v)[1]} на другие хосты`),
     comment: (c) => (/nothing to read/.test(c) ? 'ответным системам нечего читать, генерация индекса это работа на день' : c ? 'система ИИ может принять сайт за чужой' : ''),
   },
-  title: { label: 'Заголовок главной', value: (v) => { const n = nums(v); return `${plural(Number(n[n.length - 1]), 'знак', 'знака', 'знаков')}${Number(n[n.length - 1]) > 60 ? ', в выдаче обрежется' : ', укладывается в выдачу'}`; } },
-  description: { label: 'Описание главной', value: (v) => (/missing|none/i.test(v) ? 'нет' : /shortcode|garbage/i.test(v) ? 'содержит служебный код вместо текста' : `${plural(Number(nums(v)[0]), 'знак', 'знака', 'знаков')}`) },
-  h1: { label: 'Заголовок H1 на главной', value: (v) => `${plural(Number(nums(v)[0] || 0), 'заголовок', 'заголовка', 'заголовков')} H1` },
+  title: { label: 'Заголовок главной', value: (v) => { const n = nums(v); return `${plural(Number(n[n.length - 1]), 'знак', 'знака', 'знаков')}${Number(n[n.length - 1]) > 60 ? ', в выдаче обрежется' : ', укладывается в выдачу'}`; }, comment: (c) => (/^short/.test(c) ? 'коротко: в заголовке нет слов, ради которых по нему кликают' : /cut in results/.test(c) ? 'в выдаче обрежется' : '') },
+  description: { label: 'Описание главной', value: (v) => (/missing|none/i.test(v) ? 'нет' : /shortcode|garbage/i.test(v) ? 'содержит служебный код вместо текста' : `${plural(Number(nums(v)[0]), 'знак', 'знака', 'знаков')}`), comment: (c) => (/technical garbage/.test(c) ? 'в сниппете покажется технический мусор вместо текста' : /missing/.test(c) ? 'описания нет' : '') },
+  h1: { label: 'Заголовок H1 на главной', value: (v) => `${plural(Number(nums(v)[0] || 0), 'заголовок', 'заголовка', 'заголовков')} H1`, comment: (c) => (/dilutes/.test(c) ? 'больше одного H1 размывает тему страницы' : /no H1/.test(c) ? 'H1 на странице нет' : '') },
   canonical: { label: 'Канонический адрес', value: (v) => (/missing|none/i.test(v) ? 'не указан' : 'указан') },
   viewport: { label: 'Мобильный viewport', value: (v) => (/missing/.test(v) ? 'не задан' : v), comment: (c) => (c ? 'запрещает масштабирование: плохо для доступности и мобильного поиска' : '') },
-  og: { label: 'Карточки для соцсетей', value: (v) => (/none/.test(v) ? 'нет' : v) },
+  og: { label: 'Карточки для соцсетей', value: (v) => (/none/.test(v) ? 'нет' : v), comment: (c) => (/shortcode/.test(c) ? 'в описании служебный код вместо текста' : '') },
   schema: { label: 'Разметка на главной', value: (v) => (/no JSON-LD/.test(v) ? 'разметки нет' : /invalid/.test(v) ? 'разметка есть, но с ошибкой' : v) },
   'faq-schema': { label: 'Разметка вопросов FAQPage', value: (v) => (/not found/.test(v) ? 'не найдена в выборке' : `есть на ${pages(nums(v)[0])} выборки`) },
   'org-schema': { label: 'Разметка организации', value: (v) => (/not found/.test(v) ? 'не найдена: ответным системам не к чему привязать сайт' : 'есть') },
