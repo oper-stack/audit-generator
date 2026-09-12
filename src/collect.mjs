@@ -185,7 +185,12 @@ export async function collect(startUrl, { pages = 20, log = () => {}, backlinks 
   log(`homepage ${startUrl}`);
   const home = await follow(startUrl);
   const homePage = home.response.ok ? analysePage(home.final, home.response.text) : null;
-  checks.push(row('https', 'technical', 'HTTPS', home.final.startsWith('https://') ? 'ok' : 'bad', home.final.startsWith('https://') ? 'certificate active' : 'site served over http'));
+  // Сайт, который не ответил, не имеет ни сертификата, ни чего-либо ещё. Пока эта строка смотрела
+  // только на схему в адресе, отчёт по несуществующему домену уверенно сообщал «certificate active».
+  const homeAnswered = Boolean(home.response.ok);
+  checks.push(homeAnswered
+    ? row('https', 'technical', 'HTTPS', home.final.startsWith('https://') ? 'ok' : 'bad', home.final.startsWith('https://') ? 'certificate active' : 'site served over http')
+    : row('https', 'technical', 'HTTPS', 'bad', `the site did not answer${home.response.status ? `: HTTP ${home.response.status}` : ''}`, 'nothing below could be measured on a site that does not answer'));
   const altHost = host.startsWith('www.') ? host.slice(4) : `www.${host}`;
   const alt = await follow(`${new URL(home.final).protocol}//${altHost}/`);
   const altOk = alt.final.replace(/\/$/, '') === new URL(home.final).origin.replace(/\/$/, '') || alt.hops.some((h) => h.status >= 300 && h.status < 400);
@@ -423,7 +428,7 @@ export async function collect(startUrl, { pages = 20, log = () => {}, backlinks 
   const critical = checks.filter((c) => c.status === 'bad').map((c) => ({ title: c.label, text: `${c.value}${c.comment ? `. ${c.comment}` : ''}`, level: 'bad' }));
 
   return {
-    meta: { site: home.final, host, collectedAt: new Date().toISOString(), tool: `@operstack/audit ${VERSION}`, auditType: lang === 'ru' ? 'Аудит по публичным сигналам' : 'External audit (no Search Console or analytics access)', lang, language: hp ? (hp.og?.locale || '') : '' },
+    meta: { site: home.final, host, reachable: homeAnswered, collectedAt: new Date().toISOString(), tool: `@operstack/audit ${VERSION}`, auditType: lang === 'ru' ? 'Аудит по публичным сигналам' : 'External audit (no Search Console or analytics access)', lang, language: hp ? (hp.og?.locale || '') : '' },
     client: { name: '{{CLIENT NAME}}', subject: '{{What the site sells and where}}', reportDate: new Date().toISOString().slice(0, 10), preparedBy: 'OperStack' },
     scores,
     scoreBasis,

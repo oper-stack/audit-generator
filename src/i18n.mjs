@@ -43,7 +43,7 @@ export function localiseBasisNote(note) {
  * пересобирая его из тех же чисел. Там, где текст постоянный, возвращается константа.
  */
 const RU = {
-  https: { label: 'HTTPS', value: (v) => (/certificate active/.test(v) ? 'сертификат активен' : 'сайт отдаётся по http, без шифрования') },
+  https: { label: 'HTTPS', value: (v) => (/did not answer/.test(v) ? `сайт не ответил${/HTTP (\d+)/.exec(v) ? `: HTTP ${/HTTP (\d+)/.exec(v)[1]}` : ''}` : /certificate active/.test(v) ? 'сертификат активен' : 'сайт отдаётся по http, без шифрования'), comment: (c) => (c ? 'на сайте, который не отвечает, измерить нельзя ничего' : '') },
   www: {
     label: 'Склейка адреса с www',
     value: (v) => (/redirects to/.test(v) ? 'адрес с www перенаправляется на основной'
