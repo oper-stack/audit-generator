@@ -26,7 +26,16 @@ const makeKey = (data) => {
 // Проверка подписи
 ok('правильный ключ принимается', verifyKey(makeKey({ email: 'a@b.co', plan: 'agency' }), pub).ok);
 ok('мусор отвергается', !verifyKey('OSK1.aaa.bbb', pub).ok);
-ok('чужая подпись отвергается', !verifyKey(makeKey({ plan: 'agency' }).replace(/.$/, 'A'), pub).ok);
+// Портить надо байты, а не символы. В base64url последний символ кодирует не все шесть бит,
+// поэтому несколько разных символов дают одни и те же байты, и подпись оставалась верной
+// примерно в каждом пятом прогоне. Летучий тест хуже, чем никакого.
+const tampered = (k) => {
+  const [p, payload, sig] = k.split('.');
+  const bytes = Buffer.from(sig, 'base64url');
+  bytes[0] ^= 0xff;
+  return `${p}.${payload}.${bytes.toString('base64url')}`;
+};
+ok('чужая подпись отвергается', !verifyKey(tampered(makeKey({ plan: 'agency' })), pub).ok);
 ok('просроченный план отвергается', !verifyKey(makeKey({ plan: 'agency', expires: '2020-01-01' }), pub).ok);
 ok('ключ другого продукта отвергается', !verifyKey(makeKey({ plan: 'site-kit' }), pub).ok);
 ok('срок в будущем проходит', verifyKey(makeKey({ plan: 'agency', expires: '2999-01-01' }), pub).ok);
