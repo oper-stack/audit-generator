@@ -162,11 +162,15 @@ export function renderAgentPrompts(audit, opts = {}) {
   const host = audit.meta?.host || '';
   const list = agentPrompts(audit, opts);
   const intro = lang === 'ru'
-    ? [`# Задания для ИИ-агента: ${host}`, '',
-       'Это тот же список находок, что в отчёте, но переписанный так, чтобы его можно было отдать ИИ-агенту (Cursor, Claude Code, любому другому) и он сделал работу. Копируй задание целиком, вместе со строками «Сейчас» и «Как проверить»: без них агент не поймёт, откуда начинать и чем закончить.', '',
-       'Делайте по одному заданию за раз и проверяйте результат, прежде чем брать следующее. Агент, которому дали десять задач сразу, делает первую и половину остальных.', '']
-    : [`# Prompts for an AI agent: ${host}`, '',
-       'This is the same list of findings as in the report, rewritten so you can hand it to an AI agent (Cursor, Claude Code, any other) and it does the work. Copy a task whole, including the "Now" and "How to check" lines: without them the agent does not know where it starts or when it is done.', '',
-       'Do one task at a time and check the result before taking the next. An agent given ten tasks at once does the first and half of the rest.', ''];
+    ? [`# Что поправить на сайте: ${host}`, '',
+       'Ниже список задач, по одной на каждую найденную проблему. Каждая написана обычными словами, и её можно отдать кому угодно: тому, кто делал вам сайт, или помощнику вроде ChatGPT, Claude или Cursor.', '',
+       '**Как пользоваться.** Скопируйте одну задачу целиком, вместе со строками «Сейчас» и «Как проверить»: без них исполнитель не поймёт, откуда начинать и чем закончить. Отдайте её, дождитесь результата, сверьтесь со строкой «Как проверить» и берите следующую.', '',
+       'По одной за раз, это важно. Помощник, которому дали десять задач сразу, делает первую и половину остальных.', '',
+       'Кода знать не нужно. Ваше дело сказать, что сделать, и посмотреть на результат.', '']
+    : [`# What to fix on your site: ${host}`, '',
+       'Below is a list of tasks, one for every problem found. Each is written in plain words and can be handed to anyone: whoever built your site, or an assistant like ChatGPT, Claude or Cursor.', '',
+       '**How to use it.** Copy one task whole, including the "Now" and "How to check" lines: without them nobody knows where to start or when it is done. Hand it over, wait for the result, check it against "How to check", then take the next one.', '',
+       'One at a time, and this matters. An assistant given ten tasks at once does the first and half of the rest.', '',
+       'You do not need to know any code. Your job is to say what to do and look at the result.', ''];
   return [intro.join('\n').trimEnd(), ...list.map((x) => x.text)].join('\n\n');
 }
