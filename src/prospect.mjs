@@ -194,12 +194,15 @@ export function overallScore(scores = {}) {
   return Math.round((sum / weight) * 10);
 }
 
-const SEVERITY = { fail: 0, warn: 1 };
+// Сборщик размечает проверки как ok, warn, bad и na. Слова fail в нём нет, и код,
+// который его искал, пропускал мимо себя всё самое тяжёлое.
+const SEVERITY = { bad: 0, warn: 1 };
+const OPEN = (s) => s === 'bad' || s === 'warn';
 
 /** Худшие находки по одному сайту: сначала провалы, потом предупреждения, и только те, что слышит владелец. */
 export function worstFindings(audit, limit = 3, lang = 'en') {
   const open = (audit.checks || [])
-    .filter((c) => c.status === 'fail' || c.status === 'warn')
+    .filter((c) => OPEN(c.status))
     .sort((a, b) => {
       const s = (SEVERITY[a.status] ?? 2) - (SEVERITY[b.status] ?? 2);
       if (s) return s;
@@ -218,6 +221,7 @@ export function worstFindings(audit, limit = 3, lang = 'en') {
 
 /** Одна строка таблицы: сайт, оценка, находки и фраза для письма. */
 export function prospectRow(audit, { name = '', lang = 'en' } = {}) {
+  const reachable = audit.meta?.reachable !== false;
   const findings = worstFindings(audit, 3, lang);
   // Фразу для письма ищем по всем открытым находкам, а не только по трём верхним: иначе в письмо
   // попадёт сырая техническая строка вроде «API catalogue (RFC 9727): not present», которую
@@ -229,10 +233,11 @@ export function prospectRow(audit, { name = '', lang = 'en' } = {}) {
     return (ia === -1 ? 999 : ia) - (ib === -1 ? 999 : ib);
   })[0] || findings[0] || null;
   return {
+    reachable,
     host: audit.meta?.host || '',
     name: name || audit.client?.name || audit.meta?.host || '',
     score: overallScore(audit.scores),
-    failing: (audit.checks || []).filter((c) => c.status === 'fail').length,
+    failing: (audit.checks || []).filter((c) => c.status === 'bad').length,
     warning: (audit.checks || []).filter((c) => c.status === 'warn').length,
     findings,
     say: lead ? lead.say : (lang === 'ru'
@@ -241,9 +246,13 @@ export function prospectRow(audit, { name = '', lang = 'en' } = {}) {
   };
 }
 
-/** Сортировка: сначала те, у кого хуже. Сайт без оценки уходит в конец, а не наверх. */
+/** Сортировка: сначала те, у кого хуже. Сайт без оценки уходит в конец, а не наверх.
+ *  Повторы по адресу схлопываются: список клиентов человек собирает руками, и один и тот же
+ *  сайт в нём попадается. */
 export function rank(rows) {
-  return [...rows].sort((a, b) => {
+  const seen = new Map();
+  for (const r of rows) if (!seen.has(r.host)) seen.set(r.host, r);
+  return [...seen.values()].sort((a, b) => {
     if (a.score === null) return 1;
     if (b.score === null) return -1;
     if (a.score !== b.score) return a.score - b.score;
@@ -256,20 +265,35 @@ const csvCell = (v) => {
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 };
 
+/** Живые и мёртвые: писать можно только живым, остальные идут отдельным списком. */
+export function split(rows) {
+  return { live: rows.filter((r) => r.reachable !== false), dead: rows.filter((r) => r.reachable === false) };
+}
+
 export function toCsv(rows) {
-  const head = ['site', 'name', 'score', 'failing', 'warnings', 'what to say'];
-  return [head, ...rank(rows).map((r) => [r.host, r.name, r.score ?? '', r.failing, r.warning, r.say])]
+  const head = ['site', 'name', 'score', 'problems', 'warnings', 'what to say'];
+  return [head, ...rank(split(rows).live).map((r) => [r.host, r.name, r.score ?? '', r.failing, r.warning, r.say])]
     .map((line) => line.map(csvCell).join(','))
     .join('\n');
 }
 
 export function toMarkdown(rows, { title = 'Prospects, worst first' } = {}) {
-  const ranked = rank(rows);
-  const out = [`# ${title}`, '', `${ranked.length} site(s), the weakest at the top.`, '',
-    '| # | Site | Score | Fails | What to say in the first line |', '|---:|---|---:|---:|---|'];
+  const { live, dead } = split(rows);
+  const ranked = rank(live);
+  const out = [`# ${title}`, '',
+    dead.length
+      ? `${ranked.length} site(s) to write to, weakest at the top. ${dead.length} did not answer and are listed at the end.`
+      : `${ranked.length} site(s), the weakest at the top.`,
+    '',
+    '| # | Site | Score | Problems | What to say in the first line |', '|---:|---|---:|---:|---|'];
   ranked.forEach((r, i) => {
     out.push(`| ${i + 1} | ${r.host} | ${r.score ?? 'n/a'} | ${r.failing} | ${r.say.replace(/\|/g, '/')} |`);
   });
+  if (dead.length) {
+    out.push('', '## Did not answer', '',
+      'These sites did not respond, so there is nothing measured and nobody to write to. Check the address before you use it.', '');
+    for (const r of rank(dead)) out.push(`- ${r.host}`);
+  }
   out.push('', '## What each one has open', '');
   for (const r of ranked) {
     out.push(`### ${r.name} (${r.host})`);

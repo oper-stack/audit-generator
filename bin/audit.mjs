@@ -31,7 +31,7 @@ import { draftNarrative, stillEmpty } from '../src/narrative.mjs';
 import { renderAgentPrompts, agentPrompts } from '../src/prompts.mjs';
 import { render, checkNarrative } from '../src/render.mjs';
 import { resolveBranding } from '../src/agency.mjs';
-import { readList, runBatch, runProspect, summarise, toCsv, toMarkdown } from '../src/batch.mjs';
+import { rank, readList, runBatch, runProspect, split, summarise, toCsv, toMarkdown } from '../src/batch.mjs';
 import { writeFileSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
@@ -108,7 +108,12 @@ if (cmd === 'collect') {
   writeFileSync(`${base}.csv`, toCsv(rows));
   writeFileSync(`${base}.md`, toMarkdown(rows));
   for (const f of failed) console.error(`  skipped ${f.url}: ${f.reason}`);
-  console.log(`wrote ${base}.csv and ${base}.md: ${rows.length} site(s), weakest first`);
+  // Считаем по тем же правилам, по которым печатается таблица: иначе терминал скажет одно,
+  // а файл покажет другое, и первым, кто это заметит, будет покупатель.
+  const { live, dead } = split(rows);
+  const shown = rank(live).length;
+  console.log(`wrote ${base}.csv and ${base}.md: ${shown} site(s) to write to, weakest first`
+    + (dead.length ? `, ${dead.length} did not answer` : ''));
 } else if (cmd === 'batch') {
   const brand = brandFrom(opt, has);
   const items = readList(target);

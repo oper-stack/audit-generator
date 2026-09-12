@@ -100,7 +100,7 @@ const mk = (id, status, scores) => ({
   meta: { host: `${id}.example` }, client: { name: id }, scores,
   checks: [{ id, group: 'x', label: 'L', status, value: 'v' }],
 });
-const weak = prospectRow(mk('ai-search-access', 'fail', { a: 2 }));
+const weak = prospectRow(mk('ai-search-access', 'bad', { a: 2 }));
 ok('перекрытый доступ роботов ИИ попадает в письмо', /ChatGPT/.test(weak.say));
 ok('провал посчитан', weak.failing === 1 && weak.warning === 0);
 
@@ -124,9 +124,26 @@ ok('в CSV есть заголовок и строка', csv.split('\n').length 
 ok('запятая внутри фразы не ломает CSV', toCsv([{ ...weak, say: 'a, b' }]).includes('"a, b"'));
 ok('в таблице сказано, что строки измерены, а не придуманы', /measured check, not an opinion/.test(toMarkdown([weak])));
 
-const russian = prospectRow(mk('ai-search-access', 'fail', { a: 2 }), { lang: 'ru' });
+const russian = prospectRow(mk('ai-search-access', 'bad', { a: 2 }), { lang: 'ru' });
 ok('русская фраза приходит по-русски', /Perplexity не могут/.test(russian.say));
 
 
+// Три дыры, найденные прогоном по списку, который специально собран из ломающего.
+const dead = prospectRow({ meta: { host: 'gone.example', reachable: false }, scores: {}, checks: [] });
+ok('мёртвый сайт помечен, а не выдан как кандидат', dead.reachable === false);
+const { split } = await import('./prospect.mjs');
+const parts = split([dead, prospectRow(mk('alt', 'warn', { a: 9 }))]);
+ok('мёртвые не попадают в таблицу кандидатов', parts.live.length === 1 && parts.dead.length === 1);
+ok('и названы отдельным списком', /Did not answer/.test(toMarkdown([dead, prospectRow(mk('alt', 'warn', { a: 9 }))])));
+ok('мёртвого нет в CSV', !toCsv([dead]).includes('gone.example'));
+
+const bad = prospectRow(mk('ai-search-access', 'bad', { a: 2 }));
+ok('статус bad считается провалом, а не пропускается', bad.failing === 1);
+ok('и тяжёлая находка доходит до письма', /ChatGPT/.test(bad.say));
+
+const twice = rank([prospectRow(mk('alt', 'warn', { a: 9 })), prospectRow(mk('alt', 'warn', { a: 9 }))]);
+ok('один сайт в списке дважды даёт одну строку', twice.length === 1);
+
 console.log(failed ? `\n${failed} проверок не прошли` : '\nагентский план: лицензия, оформление и список проверены');
 process.exit(failed ? 1 : 0);
+

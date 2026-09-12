@@ -11,7 +11,7 @@ import { resolve, join } from 'node:path';
 import { collect } from './collect.mjs';
 import { render } from './render.mjs';
 import { draftNarrative as draft } from './narrative.mjs';
-import { prospectRow, toCsv, toMarkdown } from './prospect.mjs';
+import { prospectRow, rank, split, toCsv, toMarkdown } from './prospect.mjs';
 
 /** Строки списка: адрес и, через запятую, имя клиента для обложки. Пустые строки и # игнорируются. */
 export function parseList(text) {
@@ -94,7 +94,16 @@ export async function runProspect(items, { pages = 8, lang = 'en', log = () => {
     if (item.invalid) { failed.push({ ...item, reason: 'not a valid address' }); log(`${label}: пропущен`); continue; }
     try {
       log(`${label}: проверяю`);
-      const audit = await collect(item.url, { pages, lang, rendered: false });
+      let audit = await collect(item.url, { pages, lang, rendered: false });
+      // Сеть подводит чаще, чем сайты падают. Один повтор через пару секунд убирает почти все
+      // ложные «не отвечает»: без него один и тот же клиент в понедельник в списке, а во вторник
+      // в мёртвых, и человек перестаёт верить таблице.
+      if (audit.meta?.reachable === false) {
+        log(`${label}: не ответил, пробую ещё раз`);
+        await new Promise((r) => setTimeout(r, 2500));
+        const again = await collect(item.url, { pages, lang, rendered: false });
+        if (again.meta?.reachable !== false) audit = again;
+      }
       rows.push(prospectRow(audit, { name: item.name, lang }));
     } catch (err) {
       failed.push({ ...item, reason: err.message });
@@ -104,4 +113,4 @@ export async function runProspect(items, { pages = 8, lang = 'en', log = () => {
   return { rows, failed };
 }
 
-export { toCsv, toMarkdown };
+export { rank, split, toCsv, toMarkdown };
