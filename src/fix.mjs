@@ -108,7 +108,7 @@ const T = {
     after: 'Стало',
     nowLabel: 'Сейчас',
     gone: 'проверка исчезла из прогона',
-    recheck: 'Любую строку можно перепроверить бесплатным инструментом на oper-stack.ru/ai-visibility/',
+    recheck: (u) => `Любую строку можно перепроверить бесплатным инструментом на ${u}`,
   },
   en: {
     planTitle: (h) => `# What we will fix on ${h}`,
@@ -140,9 +140,14 @@ const T = {
     after: 'Now',
     nowLabel: 'Now',
     gone: 'the check disappeared from the run',
-    recheck: 'Every line can be re-checked with the free tool at oper-stack.com/ai-visibility/',
+    recheck: (u) => `Every line can be re-checked with the free tool at ${u}`,
   },
 };
+
+// Ссылка на бесплатную перепроверку. В отчёте под чужим брендом её нет: рекламировать нас
+// внутри документа, который подрядчик отдаёт своему клиенту, нельзя.
+const DEFAULT_RECHECK = { ru: 'oper-stack.ru/ai-visibility/', en: 'oper-stack.com/ai-visibility/' };
+const isOurBrand = (by) => !by || /operstack|oper-stack/i.test(by);
 
 const dict = (lang) => T[lang === 'en' ? 'en' : 'ru'];
 const pick = (field, lang) => (field && typeof field === 'object' ? field[lang === 'en' ? 'en' : 'ru'] : field);
@@ -186,7 +191,10 @@ export function buildFixPlan(audit, opts = {}) {
   // На здоровом сайте закрывать почти нечего, и продавать ему пакет по полной цене нечестно.
   // Порог не выдуман: ниже него доля одной проверки превышает треть чека.
   const thin = included.length > 0 && included.length < 5;
-  return { platform, price, currency, lang, langMismatch, included, needsClient, notPossible, share, thin, unknown, checkedAt: audit.meta?.collectedAt, host: audit.meta?.host };
+  const preparedBy = audit.client?.preparedBy || '';
+  const recheckUrl = opts.recheckUrl || (isOurBrand(preparedBy) ? DEFAULT_RECHECK[lang] : null);
+  const brand = { preparedBy, recheckUrl };
+  return { platform, price, currency, lang, langMismatch, included, needsClient, notPossible, share, thin, unknown, brand, checkedAt: audit.meta?.collectedAt, host: audit.meta?.host };
 }
 
 /** Письмо клиенту: то, что он согласовывает до оплаты. */
@@ -266,7 +274,7 @@ export function buildFixReport(plan, after) {
     else closed.push({ ...x, now: c.value });
   }
   const refund = Math.round(stillOpen.length * plan.share * 100) / 100;
-  return { host: plan.host, lang: plan.lang, closed, stillOpen, refund, currency: plan.currency, total: plan.included.length };
+  return { host: plan.host, lang: plan.lang, closed, stillOpen, refund, currency: plan.currency, total: plan.included.length, brand: plan.brand };
 }
 
 export function renderFixReport(report) {
@@ -285,8 +293,10 @@ export function renderFixReport(report) {
     L.push('');
     for (const x of report.stillOpen) L.push(`- **${x.check.label}.** ${t.before}: ${x.check.value}. ${t.nowLabel}: ${x.now}`);
   }
-  L.push('');
-  L.push(t.recheck);
+  if (report.brand?.recheckUrl) {
+    L.push('');
+    L.push(t.recheck(report.brand.recheckUrl));
+  }
   return L.join('\n');
 }
 

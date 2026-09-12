@@ -175,7 +175,7 @@ async function readSitemap(url, seen = new Set(), depth = 0) {
   return out;
 }
 
-export async function collect(startUrl, { pages = 20, log = () => {}, backlinks = null, lang = 'en', rendered = false, renderedPages = 3 } = {}) {
+export async function collect(startUrl, { pages = 20, log = () => {}, backlinks = null, lang = 'en', rendered = false, renderedPages = 3, preparedBy = '' } = {}) {
   const opts = { backlinks };
   const origin = new URL(startUrl).origin;
   const host = new URL(startUrl).host;
@@ -429,7 +429,7 @@ export async function collect(startUrl, { pages = 20, log = () => {}, backlinks 
 
   return {
     meta: { site: home.final, host, reachable: homeAnswered, collectedAt: new Date().toISOString(), tool: `@operstack/audit ${VERSION}`, auditType: lang === 'ru' ? 'Аудит по публичным сигналам' : 'External audit (no Search Console or analytics access)', lang, language: hp ? (hp.og?.locale || '') : '' },
-    client: { name: '{{CLIENT NAME}}', subject: '{{What the site sells and where}}', reportDate: new Date().toISOString().slice(0, 10), preparedBy: 'OperStack' },
+    client: { name: '{{CLIENT NAME}}', subject: '{{What the site sells and where}}', reportDate: new Date().toISOString().slice(0, 10), preparedBy: preparedBy || process.env.OPERSTACK_PREPARED_BY || 'OperStack' },
     scores,
     scoreBasis,
     summary: { lead: '{{Three sentences: what the site is, what works, what holds it back.}}', verdict: '{{Key takeaway in three sentences, ending with how fast the critical issues can be fixed.}}', priorities: ['{{Priority one}}', '{{Priority two}}', '{{Priority three}}'] },

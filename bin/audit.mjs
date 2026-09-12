@@ -30,6 +30,8 @@ import { buildFoundationScope, renderFoundationScope, renderFoundationChecklist 
 import { draftNarrative, stillEmpty } from '../src/narrative.mjs';
 import { renderAgentPrompts, agentPrompts } from '../src/prompts.mjs';
 import { render, checkNarrative } from '../src/render.mjs';
+import { resolveBranding } from '../src/agency.mjs';
+import { readList, runBatch, summarise } from '../src/batch.mjs';
 import { writeFileSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
@@ -58,6 +60,21 @@ if (!cmd || cmd === '--help' || cmd === '-h') {
     '      what was closed, what was not, and how much to refund',
     '  operstack-audit foundation-scope <audit.json> [--lang ru|en] [--new-pages 3] [--gsc] [--price] [--out base]',
     '      the text work the Foundation package would do, page by page; --price also states the money',
+    '',
+    '  operstack-audit batch <sites.txt> [--out reports] [--pages 12] [--lang en|ru] [--pdf] [brand flags]',
+    '      one report per line of the list; a line is "url" or "url, Client Name"',
+    '',
+    '  White label:',
+    '    --by "Agency Name"        who the report says prepared it; also OPERSTACK_PREPARED_BY',
+    '                              works on collect and on render, so an existing audit can be re-signed',
+    '    --recheck-url <url>       where the fix report sends the client to re-check',
+    '                              with --by set to someone other than us and no url, the line is omitted',
+    '',
+    '  Agency plan (needs a licence key, https://oper-stack.com/products/agency/):',
+    '    --logo <file>             svg, png, jpg or webp on the cover, embedded in the PDF',
+    '    --color <hex>             replaces the report accent colour, six hex digits',
+    '    --no-tool-line            drops the line naming the tool that collected the signals',
+    '    --licence <key>           OSK1 key; also OPERSTACK_LICENCE or a .operstack-licence file',
   ].join('\n'));
   process.exit(cmd ? 0 : 2);
 }
@@ -71,18 +88,32 @@ if (cmd === 'collect') {
   const audit = await collect(target, {
     pages: Number(opt('--pages', 20)), backlinks, lang: opt('--lang', 'en'),
     rendered: !has('--no-rendered'), renderedPages: Number(opt('--rendered-pages', 3)),
+    preparedBy: opt('--by', ''),
     log: (m) => console.error(`  ${m}`),
   });
   const out = resolve(opt('--out', 'audit.json'));
   writeFileSync(out, JSON.stringify(audit, null, 2));
   console.log(`wrote ${out}: ${audit.checks.length} checks, ${audit.sample.length} pages sampled, scores ${Object.entries(audit.scores).map(([k, v]) => `${k} ${v === null ? 'not measured' : v}`).join(', ')}`);
   console.log(`next: fill the narrative fields (operstack-audit check ${out} lists them), then render.`);
+} else if (cmd === 'batch') {
+  const brand = brandFrom(opt, has);
+  const items = readList(target);
+  if (!items.length) { console.error('the list is empty'); process.exit(2); }
+  console.error(`${items.length} site(s) to audit`);
+  const results = await runBatch(items, {
+    outDir: opt('--out', 'reports'), pages: Number(opt('--pages', 12)), lang: opt('--lang', 'en'),
+    brand, pdf: has('--pdf'), log: (m) => console.error(`  ${m}`),
+  });
+  console.log(summarise(results));
+  if (!results.some((r) => r.ok)) process.exit(1);
 } else if (cmd === 'render') {
   const audit = JSON.parse(readFileSync(resolve(target), 'utf8'));
+  const by = opt('--by', '');
+  if (by) audit.client = { ...(audit.client || {}), preparedBy: by };
   const out = resolve(opt('--out', target.replace(/\.json$/, '') + '.html'));
   const drift = verifyScores(audit);
   if (drift.length) { for (const d of drift) console.error(`score ignored, ${d}`); console.error('the report prints the score the checks give, not the one stored in the JSON.'); }
-  const { html, pdf } = await render(audit, { out, pdf: has('--pdf') });
+  const { html, pdf } = await render(audit, { out, pdf: has('--pdf'), brand: brandFrom(opt, has) });
   console.log(`wrote ${out} (${html.length} bytes)${pdf ? `\nwrote ${pdf}` : ''}`);
   const missing = checkNarrative(audit);
   if (missing.length) console.log(`note: ${missing.length} narrative field(s) still carry placeholders: ${missing.slice(0, 6).join(', ')}${missing.length > 6 ? ', ...' : ''}`);
@@ -123,6 +154,7 @@ if (cmd === 'collect') {
     lang,
     price: Number(opt('--price', lang === 'en' ? 249 : 21000)),
     currency: opt('--currency', lang === 'en' ? 'USD' : 'RUB'),
+    recheckUrl: opt('--recheck-url', ''),
   });
   if (plan.langMismatch) { console.error(`this audit was collected in Russian: an English letter would carry Russian check names. Re-run: operstack-audit collect <site> --lang en`); process.exit(1); }
   if (plan.unknown.length) console.error(`note: ${plan.unknown.length} check(s) have no fix action yet: ${plan.unknown.join(', ')}`);
@@ -166,3 +198,15 @@ if (cmd === 'collect') {
   else console.log('no price in the letter: add --price once the list is agreed and you have decided what to charge');
   console.log(`wrote ${base}-foundation-scope.json, ${base}-foundation-letter.md, ${base}-foundation-checklist.md`);
 } else { console.error(`unknown command ${cmd}`); process.exit(2); }
+
+/** Оформление из флагов. Причины, по которым что-то не применилось, печатаются сразу: молча
+ *  проигнорированный логотип выглядит как поломка продукта, а не как отсутствие лицензии. */
+function brandFrom(opt, has) {
+  const brand = resolveBranding({
+    by: opt('--by', ''), logo: opt('--logo', ''), color: opt('--color', ''),
+    licence: opt('--licence', ''), toolLine: !has('--no-tool-line'),
+  });
+  for (const n of brand.notes) console.error(`  ${n}`);
+  if (brand.licensed) console.error(`  agency plan active${brand.licensee ? ` (${brand.licensee})` : ''}`);
+  return brand;
+}

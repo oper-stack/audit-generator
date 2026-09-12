@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { computeScores } from './collect.mjs';
 import { localiseBasisNote, AREAS_RU } from './i18n.mjs';
+import { softenHex } from './agency.mjs';
 
 const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const isPlaceholder = (s) => typeof s === 'string' && /\{\{[^}]*\}\}/.test(s);
@@ -19,6 +20,7 @@ const LABELS = {
   en: {
     eyebrowAudit: 'Digital marketing audit', coverTitle: 'SEO, AEO and GEO<br>audit report',
     auditSubject: 'Audit subject', reportDate: 'Report date', auditType: 'Audit type', preparedBy: 'Prepared by',
+    reproducible: 'Every status in this report was read from the public site and can be reproduced from it as it stood on the report date.',
     collectedBy: (tool, date) => `Public signals were collected by ${tool} on ${date}. Every status in this report can be reproduced from the site as it stood on that day.`,
     secSummary: 'Executive summary', summaryEyebrow: '01 · Summary', keyTakeaway: 'Key takeaway:', threePriorities: 'Three priorities',
     scorecardFoot: 'Each score counts the checks in this report: a check that passes scores one, a check that needs attention a half, a failing check nothing. An area marked <strong>not measured</strong> is an area this audit does not test, and is never scored on an impression. Every figure here can be recomputed from section 04 onwards.',
@@ -41,6 +43,7 @@ const LABELS = {
   ru: {
     eyebrowAudit: 'Аудит цифрового маркетинга', coverTitle: 'Аудит сайта:<br>SEO, AEO и GEO',
     auditSubject: 'Что проверяли', reportDate: 'Дата отчёта', auditType: 'Тип аудита', preparedBy: 'Кто готовил',
+    reproducible: 'Каждый статус в этом отчёте прочитан с публичного сайта, и его можно перепроверить по сайту на дату отчёта.',
     collectedBy: (tool, date) => `Публичные сигналы собраны инструментом ${tool} ${date}. Любой статус в этом отчёте можно перепроверить по сайту в том виде, в каком он был в этот день.`,
     secSummary: 'Главное', summaryEyebrow: '01 · Итог', keyTakeaway: 'Главный вывод:', threePriorities: 'Три приоритета',
     scorecardFoot: 'Каждая оценка считает проверки из этого же отчёта: пройденная проверка это балл, спорная половина балла, проваленная ноль. Область с пометкой <strong>не измерялось</strong> это область, которую аудит не проверяет, и она никогда не оценивается на глаз. Любую цифру отсюда можно пересчитать по разделам начиная с четвёртого.',
@@ -96,6 +99,7 @@ function css() {
   .eyebrow { font-size: 8pt; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); font-weight: 600; margin-bottom: 2mm; }
   .cover { min-height: calc(297mm - 38mm); display: flex; flex-direction: column; justify-content: space-between; }
   .cover-top { border-top: 3px solid var(--accent); padding-top: 8mm; }
+  .cover-logo { display: block; max-height: 16mm; max-width: 70mm; margin-bottom: 7mm; }
   .cover h1 { font-size: 34pt; margin: 2mm 0 4mm; }
   .cover-sub { font-size: 13pt; color: var(--ink-2); max-width: 85%; margin-bottom: 10mm; }
   .cover-url { display: inline-block; background: var(--accent-soft); color: var(--accent); padding: 2.5mm 4.5mm; border-radius: 4px; font-weight: 600; font-size: 11pt; }
@@ -140,12 +144,14 @@ function css() {
 }
 
 const header = (audit, section, L) => `<div class="page-header"><strong>${esc(audit.client.name)}</strong><span>${esc(L.runningHead)} · ${esc(section)}</span></div>`;
-const footer = (audit, n) => `<div class="page-footer"><span>${esc(audit.client.preparedBy || 'OperStack')} · ${esc(audit.client.reportDate)}</span><span>${n}</span></div>`;
+const footer = (audit, n, by) => `<div class="page-footer"><span>${esc(by || audit.client.preparedBy || 'OperStack')} · ${esc(audit.client.reportDate)}</span><span>${n}</span></div>`;
 const list = (items) => `<ul>${(items || []).map((i) => `<li>${t(i)}</li>`).join('')}</ul>`;
 const olist = (items) => `<ol>${(items || []).map((i) => `<li>${t(i)}</li>`).join('')}</ol>`;
 const statusCell = (s, L) => `<td class="${STATUS_CLASS[s] || STATUS_CLASS.na}">${L[STATUS_KEYS[s] || 'statusNa']}</td>`;
 
-export function toHtml(audit) {
+export function toHtml(audit, brand = null) {
+  // Цвет агентства подменяет только акцент: остальная палитра отчёта остаётся выверенной.
+  const accentCss = brand && brand.accent ? `:root{--accent:${brand.accent};--accent-soft:${softenHex(brand.accent)};}` : '';
   const a = audit;
   const L = LABELS[a.meta?.lang === 'ru' ? 'ru' : 'en'];
   const groups = [['technical', 'Technical'], ['onpage', 'On-page'], ['content', 'Content'], ['aeo', 'Answer engines'], ['geo', 'Generative engines'], ['offpage', 'Off-page and trust'], ['conversion', 'Conversion'], ['overview', 'Overview']];
@@ -162,29 +168,34 @@ export function toHtml(audit) {
   }).join('');
   let n = 1;
   const pages = [];
-  pages.push(`<div class="page"><div class="cover"><div><div class="cover-top"><div class="eyebrow">${L.eyebrowAudit}</div><h1>${L.coverTitle}</h1><p class="cover-sub">${t(a.client.subject)}</p><span class="cover-url">${esc(a.meta.host)}</span></div>
-    <dl class="cover-meta"><div><dt>${L.auditSubject}</dt><dd>${t(a.client.name)}</dd></div><div><dt>${L.reportDate}</dt><dd>${esc(a.client.reportDate)}</dd></div><div><dt>${L.auditType}</dt><dd>${esc(a.meta.auditType)}</dd></div><div><dt>${L.preparedBy}</dt><dd>${esc(a.client.preparedBy || 'OperStack')}</dd></div></dl></div>
-    <div class="cover-foot">${esc(L.collectedBy(a.meta.tool, (a.meta.collectedAt || '').slice(0, 10)))}</div></div></div>`);
+  const logo = brand && brand.logo ? `<img class="cover-logo" src="${brand.logo}" alt="">` : '';
+  const preparedBy = (brand && brand.preparedBy) || a.client.preparedBy || 'OperStack';
+  const toolLine = !brand || brand.showToolLine !== false
+    ? `<div class="cover-foot">${esc(L.collectedBy(a.meta.tool, (a.meta.collectedAt || '').slice(0, 10)))}</div>`
+    : `<div class="cover-foot">${esc(L.reproducible)}</div>`;
+  pages.push(`<div class="page"><div class="cover"><div><div class="cover-top">${logo}<div class="eyebrow">${L.eyebrowAudit}</div><h1>${L.coverTitle}</h1><p class="cover-sub">${t(a.client.subject)}</p><span class="cover-url">${esc(a.meta.host)}</span></div>
+    <dl class="cover-meta"><div><dt>${L.auditSubject}</dt><dd>${t(a.client.name)}</dd></div><div><dt>${L.reportDate}</dt><dd>${esc(a.client.reportDate)}</dd></div><div><dt>${L.auditType}</dt><dd>${esc(a.meta.auditType)}</dd></div><div><dt>${L.preparedBy}</dt><dd>${esc(preparedBy)}</dd></div></dl></div>
+    ${toolLine}</div></div>`);
   n++;
-  pages.push(`<div class="page">${header(a, L.secSummary, L)}<div class="eyebrow">${L.summaryEyebrow}</div><h2>${L.secSummary}</h2><p class="lead">${t(a.summary.lead)}</p><div class="scorecard">${scoreCards}</div><p class="scorecard-foot">${L.scorecardFoot}</p><div class="verdict"><p><strong>${L.keyTakeaway}</strong> ${t(a.summary.verdict)}</p></div><h3>${L.threePriorities}</h3>${olist(a.summary.priorities)}${footer(a, n++)}</div>`);
-  pages.push(`<div class="page">${header(a, L.secOverview, L)}<div class="eyebrow">${L.overviewEyebrow}</div><h2>${L.whatSiteIs}</h2><table><tr><th>${L.parameter}</th><th>${L.value}</th></tr>${(a.overview.rows || []).map(([k, v]) => `<tr><td>${t(k)}</td><td>${t(v)}</td></tr>`).join('')}</table><p>${t(a.overview.note)}</p><h3>${L.pagesSampled}</h3><table><tr><th>${L.colUrl}</th><th>${L.colTitle}</th><th>${L.colWords}</th><th>H1</th><th>Alt</th></tr>${(a.sample || []).filter((p) => p.title !== undefined).slice(0, 14).map((p) => `<tr><td><code>${esc(new URL(p.url).pathname)}</code></td><td>${esc(p.title)}</td><td>${p.words}</td><td>${p.h1Count}</td><td>${p.images ? `${p.images - p.imagesNoAlt}/${p.images}` : '·'}</td></tr>`).join('')}</table>${footer(a, n++)}</div>`);
+  pages.push(`<div class="page">${header(a, L.secSummary, L)}<div class="eyebrow">${L.summaryEyebrow}</div><h2>${L.secSummary}</h2><p class="lead">${t(a.summary.lead)}</p><div class="scorecard">${scoreCards}</div><p class="scorecard-foot">${L.scorecardFoot}</p><div class="verdict"><p><strong>${L.keyTakeaway}</strong> ${t(a.summary.verdict)}</p></div><h3>${L.threePriorities}</h3>${olist(a.summary.priorities)}${footer(a, n++, preparedBy)}</div>`);
+  pages.push(`<div class="page">${header(a, L.secOverview, L)}<div class="eyebrow">${L.overviewEyebrow}</div><h2>${L.whatSiteIs}</h2><table><tr><th>${L.parameter}</th><th>${L.value}</th></tr>${(a.overview.rows || []).map(([k, v]) => `<tr><td>${t(k)}</td><td>${t(v)}</td></tr>`).join('')}</table><p>${t(a.overview.note)}</p><h3>${L.pagesSampled}</h3><table><tr><th>${L.colUrl}</th><th>${L.colTitle}</th><th>${L.colWords}</th><th>H1</th><th>Alt</th></tr>${(a.sample || []).filter((p) => p.title !== undefined).slice(0, 14).map((p) => `<tr><td><code>${esc(new URL(p.url).pathname)}</code></td><td>${esc(p.title)}</td><td>${p.words}</td><td>${p.h1Count}</td><td>${p.images ? `${p.images - p.imagesNoAlt}/${p.images}` : '·'}</td></tr>`).join('')}</table>${footer(a, n++, preparedBy)}</div>`);
   const cardBody = (c) => [
     c.text ? `<p>${t(c.text)}</p>` : '',
     c.cost ? `<p><span class="card-tag">${L.whatItCosts}</span>${t(c.cost)}</p>` : '',
     c.fix ? `<p><span class="card-tag">${L.theFix}</span>${t(c.fix)}</p>` : '',
   ].join('') || '<p class="card-empty">${L.noBody}</p>';
   const cards = (a.critical || []).map((c, i) => `<div class="card ${c.level === 'warn' ? 'warn' : ''}"><h4>${i + 1}. ${t(c.title)}</h4>${cardBody(c)}</div>`).join('') || `<p>${L.noCritical}</p>`;
-  pages.push(`<div class="page">${header(a, L.secCritical, L)}<div class="eyebrow">${L.criticalEyebrow}</div><h2>${L.criticalTitle}</h2><div class="cards">${cards}</div>${footer(a, n++)}</div>`);
+  pages.push(`<div class="page">${header(a, L.secCritical, L)}<div class="eyebrow">${L.criticalEyebrow}</div><h2>${L.criticalTitle}</h2><div class="cards">${cards}</div>${footer(a, n++, preparedBy)}</div>`);
   const techRows = [...checksBy('technical'), ...checksBy('onpage')].map((c) => `<tr><td>${esc(c.label)}</td>${statusCell(c.status, L)}<td>${esc(c.value)}${c.comment ? `<br><span style="color:var(--muted)">${esc(c.comment)}</span>` : ''}</td></tr>`).join('');
-  pages.push(`<div class="page">${header(a, L.secTechnical, L)}<div class="eyebrow">${L.technicalEyebrow}</div><h2>${L.technicalTitle}</h2><table><tr><th>${L.colCheck}</th><th>${L.colStatus}</th><th>${L.colFinding}</th></tr>${techRows}</table>${footer(a, n++)}</div>`);
-  pages.push(`<div class="page">${header(a, L.secContent, L)}<div class="eyebrow">${L.contentEyebrow}</div><h2>${L.contentTitle}</h2><div class="two-col"><div><h3>${L.strengths}</h3>${list(a.content.strengths)}</div><div><h3>${L.weaknesses}</h3>${list(a.content.weaknesses)}</div></div><h3>${L.gaps}</h3>${list(a.content.gaps)}${checksBy('content').length ? `<table><tr><th>${L.colCheck}</th><th>${L.colStatus}</th><th>${L.colFinding}</th></tr>${checksBy('content').map((c) => `<tr><td>${esc(c.label)}</td>${statusCell(c.status, L)}<td>${esc(c.value)}</td></tr>`).join('')}</table>` : ''}${footer(a, n++)}</div>`);
+  pages.push(`<div class="page">${header(a, L.secTechnical, L)}<div class="eyebrow">${L.technicalEyebrow}</div><h2>${L.technicalTitle}</h2><table><tr><th>${L.colCheck}</th><th>${L.colStatus}</th><th>${L.colFinding}</th></tr>${techRows}</table>${footer(a, n++, preparedBy)}</div>`);
+  pages.push(`<div class="page">${header(a, L.secContent, L)}<div class="eyebrow">${L.contentEyebrow}</div><h2>${L.contentTitle}</h2><div class="two-col"><div><h3>${L.strengths}</h3>${list(a.content.strengths)}</div><div><h3>${L.weaknesses}</h3>${list(a.content.weaknesses)}</div></div><h3>${L.gaps}</h3>${list(a.content.gaps)}${checksBy('content').length ? `<table><tr><th>${L.colCheck}</th><th>${L.colStatus}</th><th>${L.colFinding}</th></tr>${checksBy('content').map((c) => `<tr><td>${esc(c.label)}</td>${statusCell(c.status, L)}<td>${esc(c.value)}</td></tr>`).join('')}</table>` : ''}${footer(a, n++, preparedBy)}</div>`);
   const geoRows = [...checksBy('aeo'), ...checksBy('geo')].map((c) => `<tr><td>${esc(c.label)}</td>${statusCell(c.status, L)}<td>${esc(c.value)}${c.comment ? `. ${esc(c.comment.charAt(0).toUpperCase() + c.comment.slice(1))}` : ''}</td></tr>`).join('') + (a.geo.rows || []).map(([k, s, d]) => `<tr><td>${t(k)}</td><td>${t(s)}</td><td>${t(d)}</td></tr>`).join('');
-  pages.push(`<div class="page">${header(a, L.secAeo, L)}<div class="eyebrow">${L.aeoEyebrow}</div><h2>${L.aeoTitle}</h2><p class="lead">Whether the site's answers can be lifted into "People also ask", AI overviews, ChatGPT and Perplexity.</p><div class="two-col"><div><h3>${L.aeoWorks}</h3>${list(a.aeo.works)}</div><div><h3>${L.aeoBlocks}</h3>${list(a.aeo.blocks)}</div></div><div class="callout"><p><strong>${L.recommendation}</strong> ${t(a.aeo.recommendation)}</p></div><h2>${L.geoTitle}</h2><table><tr><th>${L.colSignal}</th><th>${L.colStatus}</th><th>${L.colDetail}</th></tr>${geoRows}</table><div class="callout"><p>${t(a.geo.callout)}</p></div>${footer(a, n++)}</div>`);
+  pages.push(`<div class="page">${header(a, L.secAeo, L)}<div class="eyebrow">${L.aeoEyebrow}</div><h2>${L.aeoTitle}</h2><p class="lead">Whether the site's answers can be lifted into "People also ask", AI overviews, ChatGPT and Perplexity.</p><div class="two-col"><div><h3>${L.aeoWorks}</h3>${list(a.aeo.works)}</div><div><h3>${L.aeoBlocks}</h3>${list(a.aeo.blocks)}</div></div><div class="callout"><p><strong>${L.recommendation}</strong> ${t(a.aeo.recommendation)}</p></div><h2>${L.geoTitle}</h2><table><tr><th>${L.colSignal}</th><th>${L.colStatus}</th><th>${L.colDetail}</th></tr>${geoRows}</table><div class="callout"><p>${t(a.geo.callout)}</p></div>${footer(a, n++, preparedBy)}</div>`);
   const checkTable = (g) => (checksBy(g).length ? `<table><tr><th>${L.colCheck}</th><th>${L.colStatus}</th><th>${L.colFinding}</th></tr>${checksBy(g).map((c) => `<tr><td>${esc(c.label)}</td>${statusCell(c.status, L)}<td>${esc(c.value)}${c.comment ? `<br><span style="color:var(--muted)">${esc(c.comment)}</span>` : ''}</td></tr>`).join('')}</table>` : '');
-  pages.push(`<div class="page">${header(a, L.secOffpage, L)}<div class="eyebrow">${L.offpageEyebrow}</div><h2>${L.offpageTitle}</h2>${checkTable('offpage')}${list(a.offpage.listed)}<p>${t(a.offpage.note)}</p><div class="eyebrow" style="margin-top:8mm">${L.conversionEyebrow}</div><h2>${L.conversionTitle}</h2>${checkTable('conversion')}<table><tr><th>${L.colElement}</th><th>${L.colStatus}</th></tr>${(a.conversion.rows || []).map(([k, v]) => `<tr><td>${t(k)}</td><td>${t(v)}</td></tr>`).join('')}</table><div class="eyebrow" style="margin-top:8mm">${L.limitationsEyebrow}</div><h2>${L.sourcesTitle}</h2>${(a.sources || []).length ? `<table><tr><th>${L.colSource}</th><th>${L.colAccess}</th><th>${L.colWhatRead}</th></tr>${a.sources.map((s) => `<tr><td>${t(s.name)}</td><td>${t(s.access)}</td><td>${t(s.detail)}</td></tr>`).join('')}</table><p class="scorecard-foot">${L.sourcesFoot}</p>` : ''}<h3>${L.limitations}</h3>${list(a.limitations)}${footer(a, n++)}</div>`);
+  pages.push(`<div class="page">${header(a, L.secOffpage, L)}<div class="eyebrow">${L.offpageEyebrow}</div><h2>${L.offpageTitle}</h2>${checkTable('offpage')}${list(a.offpage.listed)}<p>${t(a.offpage.note)}</p><div class="eyebrow" style="margin-top:8mm">${L.conversionEyebrow}</div><h2>${L.conversionTitle}</h2>${checkTable('conversion')}<table><tr><th>${L.colElement}</th><th>${L.colStatus}</th></tr>${(a.conversion.rows || []).map(([k, v]) => `<tr><td>${t(k)}</td><td>${t(v)}</td></tr>`).join('')}</table><div class="eyebrow" style="margin-top:8mm">${L.limitationsEyebrow}</div><h2>${L.sourcesTitle}</h2>${(a.sources || []).length ? `<table><tr><th>${L.colSource}</th><th>${L.colAccess}</th><th>${L.colWhatRead}</th></tr>${a.sources.map((s) => `<tr><td>${t(s.name)}</td><td>${t(s.access)}</td><td>${t(s.detail)}</td></tr>`).join('')}</table><p class="scorecard-foot">${L.sourcesFoot}</p>` : ''}<h3>${L.limitations}</h3>${list(a.limitations)}${footer(a, n++, preparedBy)}</div>`);
   const phases = (a.roadmap || []).map((p) => `<div class="phase"><div class="phase-head"><span class="badge">${esc(p.badge)}</span><span class="phase-title">${t(p.title)}</span></div>${olist(p.items)}</div>`).join('');
-  pages.push(`<div class="page">${header(a, L.secRoadmap, L)}<div class="eyebrow">${L.roadmapEyebrow}</div><h2>${L.roadmapTitle}</h2>${phases}<div class="verdict"><p><strong>${L.keyMessage}</strong> ${t(a.closing)}</p></div>${footer(a, n++)}</div>`);
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${esc(a.client.name)}: SEO, AEO and GEO audit</title><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono&display=swap"><style>${css()}</style></head><body>${pages.join('\n')}</body></html>`;
+  pages.push(`<div class="page">${header(a, L.secRoadmap, L)}<div class="eyebrow">${L.roadmapEyebrow}</div><h2>${L.roadmapTitle}</h2>${phases}<div class="verdict"><p><strong>${L.keyMessage}</strong> ${t(a.closing)}</p></div>${footer(a, n++, preparedBy)}</div>`);
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${esc(a.client.name)}: SEO, AEO and GEO audit</title><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono&display=swap"><style>${css()}${accentCss}</style></head><body>${pages.join('\n')}</body></html>`;
 }
 
 function findChrome() {
@@ -192,8 +203,8 @@ function findChrome() {
   return candidates.find((p) => existsSync(p));
 }
 
-export async function render(audit, { out, pdf = false } = {}) {
-  const html = toHtml(audit);
+export async function render(audit, { out, pdf = false, brand = null } = {}) {
+  const html = toHtml(audit, brand);
   writeFileSync(out, html);
   let pdfPath = null;
   if (pdf) {

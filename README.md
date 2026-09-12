@@ -141,3 +141,28 @@ The external tier reads public pages only. It does not run a lab performance tes
 ## License
 
 MIT. Built by OperStack.
+
+## Agency plan
+
+Signing a report with someone else's name is free:
+
+```
+operstack-audit render audit.json --by "Harper & Vale Digital"
+```
+
+The cover and every page footer then carry that name. The cover keeps one line saying which tool
+collected the signals, so the report still shows its method.
+
+The agency plan replaces that with the buyer's own identity and adds bulk runs:
+
+```
+operstack-audit batch clients.txt --by "Harper & Vale Digital" \
+  --logo brand/logo.svg --color "#7b3fa0" --no-tool-line --pdf
+```
+
+`clients.txt` holds one site per line, either `example.com` or `example.com, Client Name`. Every
+report lands in `reports/`, and a site that fails does not stop the rest.
+
+The key goes in `--licence`, in `OPERSTACK_LICENCE`, or in a `.operstack-licence` file beside the
+work. This package is MIT and its source is public, so the key states the terms of commercial use
+and records who bought them; it is not a technical lock. Plan: https://oper-stack.com/products/agency/
