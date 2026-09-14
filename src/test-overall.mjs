@@ -107,6 +107,46 @@ ok('параметры нельзя поменять на ходу', Object.isFr
   }
 }
 
+/*
+ * Балл, уже измеренный на странице, приезжает в отчёт готовым и не перемеряется.
+ *
+ * Живая сверка 14.09.2026: whitewill.ru дал 47 и 44 в двух прогонах подряд, habr.com в одном
+ * прогоне вернул отказ. Тот же код, разная удача сети: бюджет 8,5 секунды, и карта сайта то
+ * успевает прочитаться, то нет. Покупателю всё равно, что оба числа честные, он видит два разных.
+ * Поэтому в воронке измерение происходит один раз.
+ */
+{
+  const server = createServer((req, res) => {
+    res.setHeader('content-type', 'text/html');
+    res.end('<!doctype html><html><head><title>Local</title></head><body><h1>Local</h1><p>Text.</p></body></html>');
+  });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  const base = `http://127.0.0.1:${server.address().port}/`;
+
+  const fromPage = { ok: true, score: 63, grade: 'B', checkedAt: '2026-09-14T20:00:00.000Z', ms: 4200, areas: [
+    { id: 'access', label: 'Access for AI crawlers', score: 25, max: 25 },
+    { id: 'index', label: 'Agent index', score: 10, max: 15 },
+    { id: 'entity', label: 'Entity and structure', score: 12, max: 20 },
+    { id: 'content', label: 'Answer-first content', score: 11, max: 25 },
+    { id: 'trust', label: 'Freshness and sources', score: 5, max: 15 }] };
+
+  const audit = await collect(base, { pages: 2, log: () => {}, visibility: fromPage });
+  server.close();
+
+  is('готовый балл берётся как есть', audit.overall.score, 63);
+  is('и оценка буквой тоже', audit.overall.grade, 'B');
+  is('видно, что балл переиспользован, а не измерен заново', audit.overall.source, 'visibility:reused');
+  is('сохранено, когда его измерили', audit.overall.measuredAt, '2026-09-14T20:00:00.000Z');
+  is('пять областей приехали целиком', audit.overall.areas.length, 5);
+  is('и складываются в заголовок', audit.overall.areas.reduce((a, x) => a + x.score, 0), 63);
+  is('отчёт сходится сам с собой', verifyScores(audit), []);
+  // Локальный адрес движок бы мерить отказался, а балл всё равно есть: значит второго измерения не было.
+  ok('второго измерения не случилось', audit.overall.score === 63 && !audit.overall.error);
+
+  audit.meta.lang = 'ru';
+  is('и отчёт печатает именно его', Number((toHtml(audit, null).match(/overall-num[^>]*>(\d+)<span>/) || [])[1]), 63);
+}
+
 // ---- движок в пакете это та же программа, что стоит на сайтах
 {
   const here = readFileSync(new URL('./visibility.mjs', import.meta.url), 'utf8');

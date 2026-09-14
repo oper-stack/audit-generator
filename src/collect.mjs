@@ -207,7 +207,7 @@ async function readSitemap(startUrl, { maxFiles = 6, budgetMs = 45000, maxUrls =
 
 export const __readSitemap = readSitemap;
 
-export async function collect(startUrl, { pages = 20, log = () => {}, backlinks = null, lang = 'en', rendered = false, renderedPages = 3, preparedBy = '', requestTimeout = 15000, sitemapBudgetMs = 45000, sitemapMaxFiles = 6 } = {}) {
+export async function collect(startUrl, { pages = 20, log = () => {}, backlinks = null, lang = 'en', rendered = false, renderedPages = 3, preparedBy = '', visibility: givenVisibility = null, requestTimeout = 15000, sitemapBudgetMs = 45000, sitemapMaxFiles = 6 } = {}) {
   REQUEST_TIMEOUT = requestTimeout;
   const opts = { backlinks };
   const origin = new URL(startUrl).origin;
@@ -483,11 +483,26 @@ export async function collect(startUrl, { pages = 20, log = () => {}, backlinks 
    * тут больше страниц или времени, и число снова разойдётся со страницей. Глубина аудита живёт в
    * его собственных шести областях и в списке задач, а не в этом числе.
    */
-  log('visibility score');
-  const visibility = await checkVisibility(startUrl, { ...VISIBILITY_DEFAULTS, lang });
-  const overall = visibility.ok
-    ? { score: visibility.score, grade: visibility.grade, areas: visibility.areas, source: 'visibility', ms: visibility.ms }
-    : { score: null, grade: 'not measured', areas: [], source: 'visibility', error: visibility.error };
+  /*
+   * Если балл уже измерен, второй раз не меряем.
+   *
+   * Живая сверка 14.09.2026 на whitewill.ru дала 47 и 44 в двух прогонах подряд, а на habr.com
+   * один прогон вернул отказ. Код один и тот же, разная только удача сети: бюджет у проверки
+   * 8,5 секунды, и на медленном сайте карта сайта то успевает прочитаться, то нет, а движок
+   * честно не штрафует за непрочитанное. Два измерения одного сайта дают два числа, и покупателю
+   * всё равно, что оба честные: он видит 44 на странице и 47 в письме.
+   *
+   * Поэтому в воронке балл измеряется РОВНО ОДИН РАЗ, на странице, и приезжает сюда готовым
+   * через опцию `visibility`. Тогда страница, письмо и отчёт несут одно число по построению,
+   * а не по совпадению. Меряем сами только когда аудит запускают отдельно и мерить больше некому.
+   */
+  let visibility = givenVisibility;
+  if (visibility) log('visibility score: taken from the check the visitor already ran');
+  else { log('visibility score'); visibility = await checkVisibility(startUrl, { ...VISIBILITY_DEFAULTS, lang }); }
+  const measuredAt = visibility && visibility.checkedAt ? visibility.checkedAt : null;
+  const overall = visibility && visibility.ok
+    ? { score: visibility.score, grade: visibility.grade, areas: visibility.areas, source: givenVisibility ? 'visibility:reused' : 'visibility', measuredAt, ms: visibility.ms }
+    : { score: null, grade: 'not measured', areas: [], source: givenVisibility ? 'visibility:reused' : 'visibility', error: (visibility && visibility.error) || 'no visibility result' };
   // Шесть областей отчёта остаются, но это другое измерение, а не разбивка общего балла.
   const reportScore = computeOverall(checks);
 
