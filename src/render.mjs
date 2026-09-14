@@ -23,15 +23,14 @@ const LABELS = {
     reproducible: 'Every status in this report was read from the public site and can be reproduced from it as it stood on the report date.',
     collectedBy: (tool, date) => `Public signals were collected by ${tool} on ${date}. Every status in this report can be reproduced from the site as it stood on that day.`,
     secSummary: 'Executive summary', summaryEyebrow: '01 · Summary', keyTakeaway: 'Key takeaway:', threePriorities: 'Three priorities',
-    scorecardFoot: 'Each score counts the checks in this report: a check that passes scores one, a check that needs attention a half, a failing check nothing. An area marked <strong>not measured</strong> is an area this audit does not test, and is never scored on an impression. Every figure here can be recomputed from section 04 onwards.',
+    scorecardFoot: 'These six scores are not a breakdown of the number above and will not add up to it: they count the checks in this report, which go wider than AI visibility. Each score counts the checks in this report: a check that passes scores one, a check that needs attention a half, a failing check nothing. An area marked <strong>not measured</strong> is an area this audit does not test, and is never scored on an impression. Every figure here can be recomputed from section 04 onwards.',
     notMeasured: 'not measured',
-    overallLabel: 'Overall score',
-    grades: { strong: 'Strong', workable: 'Workable', weak: 'Weak', critical: 'Critical' },
-    // Веса это решение, а не измерение, поэтому они напечатаны здесь: балл должен пересчитываться руками.
-    overallNote: (o) => `Weighted from the areas below: ${o.parts.map((x) => `${x.label} ${x.weight}`).join(', ')}. `
-      + (o.weighed === 100
-        ? 'Every area was measurable on this site.'
-        : `Only ${o.weighed} of 100 points were measurable here, so the areas this audit could not read are left out of the total rather than scored zero.`),
+    overallLabel: 'AI visibility score',
+    grades: { A: 'Strong', B: 'Workable', C: 'Weak', D: 'Poor', E: 'Critical' },
+    // Заголовок это то же измерение, что на странице проверки. Подпись обязана это говорить,
+    // иначе читатель снова начнёт сводить его с шестью областями ниже.
+    overallNote: 'The same measurement the free check at oper-stack.com/ai-visibility gives for this site: the same code, the same settings. The five areas below add up to it exactly, so you can recompute it by hand.',
+    secondMeasure: 'A second, separate measurement: how this report scores its own checks',
     secOverview: 'Site overview', overviewEyebrow: '02 · Overview', whatSiteIs: 'What the site is', parameter: 'Parameter', value: 'Value', pagesSampled: 'Pages sampled', colUrl: 'URL', colTitle: 'Title', colWords: 'Words',
     secCritical: 'Critical issues', criticalEyebrow: '03 · P0', criticalTitle: 'Critical issues, fix first', whatItCosts: 'What it costs', theFix: 'Fix', noBody: 'This issue has no description in the audit file.', noCritical: 'No critical defects were found in the public signals.',
     secTechnical: 'Technical SEO', technicalEyebrow: '04 · Technical', technicalTitle: 'Technical and on-page checklist', colCheck: 'Check', colStatus: 'Status', colFinding: 'Finding',
@@ -53,14 +52,12 @@ const LABELS = {
     reproducible: 'Каждый статус в этом отчёте прочитан с публичного сайта, и его можно перепроверить по сайту на дату отчёта.',
     collectedBy: (tool, date) => `Публичные сигналы собраны инструментом ${tool} ${date}. Любой статус в этом отчёте можно перепроверить по сайту в том виде, в каком он был в этот день.`,
     secSummary: 'Главное', summaryEyebrow: '01 · Итог', keyTakeaway: 'Главный вывод:', threePriorities: 'Три приоритета',
-    scorecardFoot: 'Каждая оценка считает проверки из этого же отчёта: пройденная проверка это балл, спорная половина балла, проваленная ноль. Область с пометкой <strong>не измерялось</strong> это область, которую аудит не проверяет, и она никогда не оценивается на глаз. Любую цифру отсюда можно пересчитать по разделам начиная с четвёртого.',
+    scorecardFoot: 'Эти шесть оценок не разбивка балла выше и в сумме его не дают: они считают проверки самого отчёта, а он шире, чем видимость в ИИ. Каждая оценка считает проверки из этого же отчёта: пройденная проверка это балл, спорная половина балла, проваленная ноль. Область с пометкой <strong>не измерялось</strong> это область, которую аудит не проверяет, и она никогда не оценивается на глаз. Любую цифру отсюда можно пересчитать по разделам начиная с четвёртого.',
     notMeasured: 'не измерялось',
-    overallLabel: 'Общий балл',
-    grades: { strong: 'Сильно', workable: 'Рабочее состояние', weak: 'Слабо', critical: 'Критично' },
-    overallNote: (o) => `Взвешен по областям ниже: ${o.parts.map((x) => `${AREAS_RU[x.label] || x.label} ${x.weight}`).join(', ')}. `
-      + (o.weighed === 100
-        ? 'Все области на этом сайте удалось измерить.'
-        : `Измеримыми здесь оказались ${o.weighed} ${ruPoints(o.weighed)} из 100, поэтому области, которые аудит прочитать не смог, не попали в знаменатель, а не получили ноль.`),
+    overallLabel: 'Балл видимости в ИИ',
+    grades: { A: 'Сильно', B: 'Рабочее состояние', C: 'Слабо', D: 'Плохо', E: 'Критично' },
+    overallNote: 'То же измерение, что даёт бесплатная проверка на oper-stack.com/ai-visibility для этого сайта: тот же код, те же настройки. Пять областей ниже дают в сумме ровно этот балл, его можно сложить руками.',
+    secondMeasure: 'Второе, отдельное измерение: как этот отчёт оценивает собственные проверки',
     secOverview: 'О сайте', overviewEyebrow: '02 · Обзор', whatSiteIs: 'Что это за сайт', parameter: 'Параметр', value: 'Значение', pagesSampled: 'Проверенные страницы', colUrl: 'Адрес', colTitle: 'Заголовок', colWords: 'Слов',
     secCritical: 'Критичное', criticalEyebrow: '03 · Срочно', criticalTitle: 'Что чинить первым', whatItCosts: 'Чем это грозит', theFix: 'Как чинится', noBody: 'У этой проблемы нет описания в файле аудита.', noCritical: 'Критичных дефектов в публичных сигналах не найдено.',
     secTechnical: 'Техническое SEO', technicalEyebrow: '04 · Техника', technicalTitle: 'Техническая проверка и страницы', colCheck: 'Проверка', colStatus: 'Статус', colFinding: 'Что нашли',
@@ -126,6 +123,11 @@ function css() {
   .page-header { display: flex; justify-content: space-between; align-items: center; padding-bottom: 3mm; margin-bottom: 6mm; border-bottom: 1px solid var(--rule); font-size: 8pt; color: var(--muted); }
   .page-header strong { color: var(--accent); }
   .page-footer { position: absolute; bottom: 9mm; left: var(--pad); right: var(--pad); display: flex; justify-content: space-between; font-size: 8pt; color: var(--muted); border-top: 1px solid var(--rule); padding-top: 2.5mm; }
+  table.areas { border-collapse: collapse; width: 100%; margin: -2mm 0 5mm; font-size: 8.5pt; }
+  table.areas th { background: #eef4f4; color: var(--muted); font-weight: 500; text-transform: uppercase; letter-spacing: .05em; font-size: 7.5pt; padding: 2mm 2.5mm; text-align: center; border: 1px solid var(--rule); }
+  table.areas td { text-align: center; padding: 2.5mm; border: 1px solid var(--rule); font-family: "Fraunces", Georgia, serif; font-size: 13pt; font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; }
+  table.areas td span { font-family: inherit; font-size: 9pt; color: var(--muted); font-weight: 400; }
+  h3.second-measure { font-size: 11pt; margin: 7mm 0 3mm; }
   .overall { display: flex; align-items: center; gap: 6mm; border: 1px solid var(--rule); border-radius: 5px; padding: 5mm 6mm; background: #f4f8f8; margin: 5mm 0 4mm; }
   .overall-num { font-family: "Fraunces", Georgia, serif; font-size: 44pt; font-weight: 600; line-height: 1; color: var(--accent); font-variant-numeric: tabular-nums; }
   .overall-num span { font-size: 18pt; color: var(--muted); }
@@ -180,15 +182,24 @@ export function toHtml(audit, brand = null) {
   const groups = [['technical', 'Technical'], ['onpage', 'On-page'], ['content', 'Content'], ['aeo', 'Answer engines'], ['geo', 'Generative engines'], ['offpage', 'Off-page and trust'], ['conversion', 'Conversion'], ['overview', 'Overview']];
   const checksBy = (g) => (a.checks || []).filter((c) => c.group === g);
   const { scores: measured, scoreBasis } = computeScores(a.checks || []);
-  // Один балл на весь отчёт стоит заголовком, шесть областей под ним расшифровкой. До 14.09.2026
-  // в письме и в PDF стояли числа из двух разных движков, и читатель делал единственный возможный
-  // вывод: цифры выдуманы. Веса печатаются рядом, чтобы балл можно было пересчитать руками.
-  const overall = computeOverall(a.checks || []);
-  const overallBlock = overall.score === null ? '' : `<div class="overall">
+  /*
+   * Заголовок отчёта это тот же балл видимости, который человек увидел на странице бесплатной
+   * проверки, и он приходит готовым из `audit.overall`: пересчитывать его здесь нельзя, иначе
+   * снова получатся два числа про один сайт. Под ним его же пять областей, которые дают в сумме
+   * ровно заголовок, чтобы читатель мог сложить их и сойтись.
+   *
+   * Шесть областей отчёта печатаются ниже отдельным блоком и с другой подписью: это второе,
+   * независимое измерение по проверкам самого отчёта, а не разбивка заголовка. Сводить их с
+   * заголовком не нужно и не получится, и об этом сказано словами.
+   */
+  const overall = a.overall && a.overall.score !== undefined ? a.overall : null;
+  const overallAreas = overall && Array.isArray(overall.areas) ? overall.areas : [];
+  const overallBlock = !overall || overall.score === null ? '' : `<div class="overall">
     <div class="overall-num ${scoreClass(Math.round(overall.score / 10))}">${overall.score}<span>/100</span></div>
     <div class="overall-side"><div class="overall-label">${esc(L.overallLabel)}</div>
-      <div class="overall-grade">${esc(L.grades[overall.grade] || overall.grade)}</div>
-      <div class="overall-note">${esc(L.overallNote(overall))}</div></div></div>`;
+      <div class="overall-grade">${esc((L.grades && L.grades[overall.grade]) || overall.grade)}</div>
+      <div class="overall-note">${esc(L.overallNote)}</div></div></div>`
+    + (overallAreas.length ? `<table class="areas"><tr>${overallAreas.map((x) => `<th>${esc(x.label)}</th>`).join('')}</tr><tr>${overallAreas.map((x) => `<td>${x.score}<span>/${x.max}</span></td>`).join('')}</tr></table>` : '');
   const scoreCards = Object.entries(measured).map(([label, n]) => {
     const basis = scoreBasis[label] || {};
     const shown = (L.areas && L.areas[label]) || label;
@@ -209,7 +220,7 @@ export function toHtml(audit, brand = null) {
     <dl class="cover-meta"><div><dt>${L.auditSubject}</dt><dd>${t(a.client.name)}</dd></div><div><dt>${L.reportDate}</dt><dd>${esc(a.client.reportDate)}</dd></div><div><dt>${L.auditType}</dt><dd>${esc(a.meta.auditType)}</dd></div><div><dt>${L.preparedBy}</dt><dd>${esc(preparedBy)}</dd></div></dl></div>
     ${toolLine}</div></div>`);
   n++;
-  pages.push(`<div class="page">${header(a, L.secSummary, L)}<div class="eyebrow">${L.summaryEyebrow}</div><h2>${L.secSummary}</h2><p class="lead">${t(a.summary.lead)}</p>${overallBlock}<div class="scorecard">${scoreCards}</div><p class="scorecard-foot">${L.scorecardFoot}</p><div class="verdict"><p><strong>${L.keyTakeaway}</strong> ${t(a.summary.verdict)}</p></div><h3>${L.threePriorities}</h3>${olist(a.summary.priorities)}${footer(a, n++, preparedBy)}</div>`);
+  pages.push(`<div class="page">${header(a, L.secSummary, L)}<div class="eyebrow">${L.summaryEyebrow}</div><h2>${L.secSummary}</h2><p class="lead">${t(a.summary.lead)}</p>${overallBlock}<h3 class="second-measure">${L.secondMeasure}</h3><div class="scorecard">${scoreCards}</div><p class="scorecard-foot">${L.scorecardFoot}</p><div class="verdict"><p><strong>${L.keyTakeaway}</strong> ${t(a.summary.verdict)}</p></div><h3>${L.threePriorities}</h3>${olist(a.summary.priorities)}${footer(a, n++, preparedBy)}</div>`);
   pages.push(`<div class="page">${header(a, L.secOverview, L)}<div class="eyebrow">${L.overviewEyebrow}</div><h2>${L.whatSiteIs}</h2><table><tr><th>${L.parameter}</th><th>${L.value}</th></tr>${(a.overview.rows || []).map(([k, v]) => `<tr><td>${t(k)}</td><td>${t(v)}</td></tr>`).join('')}</table><p>${t(a.overview.note)}</p><h3>${L.pagesSampled}</h3><table><tr><th>${L.colUrl}</th><th>${L.colTitle}</th><th>${L.colWords}</th><th>H1</th><th>Alt</th></tr>${(a.sample || []).filter((p) => p.title !== undefined).slice(0, 14).map((p) => `<tr><td><code>${esc(new URL(p.url).pathname)}</code></td><td>${esc(p.title)}</td><td>${p.words}</td><td>${p.h1Count}</td><td>${p.images ? `${p.images - p.imagesNoAlt}/${p.images}` : '·'}</td></tr>`).join('')}</table>${footer(a, n++, preparedBy)}</div>`);
   const cardBody = (c) => [
     c.text ? `<p>${t(c.text)}</p>` : '',

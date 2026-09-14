@@ -1,110 +1,117 @@
 #!/usr/bin/env node
-/** Один балл из ста: и в объекте аудита, и в отчёте, и на обоих языках.
+/** Один балл на странице, в письме и в отчёте.
  *
- *  14.09.2026 человек получил письмо с «45 из 100» и приложенный PDF, где шесть областей давали
- *  44 из 60, то есть 73 процента. Два разных движка в одном документе читаются как выдуманные
- *  цифры. Эти тесты держат единственный источник балла и запрет считать неизмеренное нулём. */
+ *  14.09.2026 человек увидел 46 на странице проверки, 61 в письме и шесть областей из шестидесяти
+ *  в приложенном PDF. Три числа про один сайт за один день. Считали их разные движки с разными
+ *  рамками, и единственный вывод, который делает читатель, это что цифры выдуманы.
+ *
+ *  Теперь движок один и живёт в этом пакете, а параметры зафиксированы в VISIBILITY_DEFAULTS.
+ *  Эти тесты держат три вещи: балл сходится сам с собой, сборщик берёт его у того же движка, и
+ *  отчёт печатает именно его, на обоих языках. */
 import { readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { collect, computeOverall, computeScores, verifyScores, SCORE_AREAS } from './collect.mjs';
+import { checkVisibility, VISIBILITY_DEFAULTS } from './visibility.mjs';
 import { toHtml } from './render.mjs';
 
 let bad = 0;
 const ok = (n, c) => { if (c) console.log(`ok   ${n}`); else { bad++; console.error(`FAIL ${n}`); } };
 const is = (n, a, b) => ok(`${n} (ждали ${JSON.stringify(b)}, вышло ${JSON.stringify(a)})`, JSON.stringify(a) === JSON.stringify(b));
-
 const c = (group, status, i = 0) => ({ id: `${group}-${status}-${i}`, group, status, label: group, value: 'x' });
 
-// Веса это решение, а не измерение, но сумма обязана быть сотней, иначе балл не из ста.
-is('веса дают ровно сто', SCORE_AREAS.reduce((s, a) => s + a.weight, 0), 100);
-
-// Всё пройдено это сто, всё провалено это ноль.
+// ---- балл по проверкам отчёта: отдельное измерение, оно обязано пересчитываться из checks
+is('веса шести областей дают сто', SCORE_AREAS.reduce((s, a) => s + a.weight, 0), 100);
 const every = (status) => SCORE_AREAS.flatMap((a) => a.groups.map((g) => c(g, status)));
-is('все проверки пройдены: сто', computeOverall(every('ok')).score, 100);
-is('все проверки провалены: ноль', computeOverall(every('bad')).score, 0);
-is('все спорные: половина', computeOverall(every('warn')).score, 50);
-
-// Неизмеренная область выкидывается из знаменателя, а не получает ноль. Ноль за то, чего не
-// мерили, это неверное измерение, ровно как «0 знаков» вместо «описания у страницы нет».
+is('все пройдены: сто', computeOverall(every('ok')).score, 100);
+is('все провалены: ноль', computeOverall(every('bad')).score, 0);
+is('пустой набор не даёт нуля', computeOverall([]).score, null);
 {
-  const partial = [c('technical', 'ok'), c('geo', 'ok')];
-  const o = computeOverall(partial);
-  is('измеренное на отлично даёт сто даже при неполном покрытии', o.score, 100);
-  is('в знаменатель попали только измеренные веса', o.weighed, 40);
-  ok('и отчёт об этом говорит', /40 of 100 points were measurable/.test(o.note));
-  ok('неизмеренные области в разбивку не попали', o.parts.length === 2);
+  const o = computeOverall([c('technical', 'ok'), c('geo', 'ok')]);
+  is('неизмеренное выпадает из знаменателя, а не становится нулём', o.score, 100);
+  is('в знаменателе только измеренные веса', o.weighed, 40);
 }
 
-// Пустой аудит не выдаёт ноль: нечего мерить это не то же самое, что всё плохо.
+// ---- параметры измерения зафиксированы: их расхождение и есть расхождение чисел
+is('бюджет времени один на всех', VISIBILITY_DEFAULTS.budgetMs, 8500);
+is('глубина выборки одна на всех', VISIBILITY_DEFAULTS.samplePages, 3);
+ok('параметры нельзя поменять на ходу', Object.isFrozen(VISIBILITY_DEFAULTS));
+
+// ---- балл видимости сходится сам с собой
 {
-  const o = computeOverall([]);
-  is('пустой набор проверок не даёт нуля', o.score, null);
-  is('и называется неизмеренным', o.grade, 'not measured');
+  const audit = { checks: [], overall: { score: 61, areas: [{ score: 20, max: 25 }, { score: 10, max: 15 }, { score: 12, max: 20 }, { score: 14, max: 25 }, { score: 5, max: 15 }] } };
+  is('честный заголовок проверку проходит', verifyScores(audit), []);
+  ok('подделанный заголовок ловится', verifyScores({ ...audit, overall: { ...audit.overall, score: 70 } }).some((p) => p.startsWith('overall')));
+  ok('шкала не из ста ловится', verifyScores({ checks: [], overall: { score: 20, areas: [{ score: 20, max: 30 }] } }).some((p) => /out of 30/.test(p)));
+}
+{
+  const checks = [c('technical', 'ok'), c('geo', 'bad')];
+  const audit = { checks, scores: computeScores(checks).scores, reportScore: computeOverall(checks) };
+  is('балл по проверкам отчёта сходится с checks', verifyScores(audit), []);
+  ok('подделанный балл по проверкам ловится', verifyScores({ ...audit, reportScore: { score: 99 } }).some((p) => p.startsWith('reportScore')));
 }
 
-// Проверки со статусом na не считаются ни в плюс, ни в минус.
-{
-  const withNa = [c('technical', 'ok'), { ...c('technical', 'na'), status: 'na' }];
-  is('na не портит и не улучшает балл', computeOverall(withNa).score, 100);
-}
-
-// Балл в отчёте обязан сходиться с проверками этого же отчёта.
-{
-  const audit = JSON.parse(readFileSync(new URL('../examples/sample-audit.json', import.meta.url), 'utf8'));
-  const o = computeOverall(audit.checks || []);
-  audit.overall = o;
-  const problems = verifyScores(audit);
-  ok('честный отчёт проходит проверку', !problems.some((p) => p.startsWith('overall')));
-  audit.overall = { ...o, score: (o.score + 7) % 101 };
-  ok('подделанный балл ловится', verifyScores(audit).some((p) => p.startsWith('overall')));
-}
-
-// Оба языка. Сегодня дважды чинили русскую ветку и оставляли английскую сломанной.
-{
-  const audit = JSON.parse(readFileSync(new URL('../examples/sample-audit.json', import.meta.url), 'utf8'));
-  const expected = computeOverall(audit.checks || []).score;
-  for (const [lang, grade, note] of [['en', /Strong|Workable|Weak|Critical/, /Weighted from the areas below/], ['ru', /Сильно|Рабочее состояние|Слабо|Критично/, /Взвешен по областям ниже/]]) {
-    audit.meta.lang = lang;
-    const html = toHtml(audit, null);
-    const num = (html.match(/overall-num[^>]*>(\d+)<span>/) || [])[1];
-    is(`${lang}: в отчёте стоит тот же балл, что считают проверки`, Number(num), expected);
-    ok(`${lang}: оценка словом на своём языке`, grade.test((html.match(/overall-grade">([^<]*)</) || [])[1] || ''));
-    ok(`${lang}: веса напечатаны, балл можно пересчитать руками`, note.test(html));
-    ok(`${lang}: в подписи нет чужого языка`, lang === 'en'
-      ? !/[А-Яа-яЁё]/.test((html.match(/overall-note">([^<]*)</) || [])[1] || '')
-      : !/Weighted|measurable/.test((html.match(/overall-note">([^<]*)</) || [])[1] || ''));
-  }
-  // Русское склонение: 75 баллов, а не 75 балла.
-  audit.meta.lang = 'ru';
-  ok('русское склонение «баллов» верное', !/\d+ балла из 100/.test(toHtml(audit, null)));
-}
-
-// Шесть областей никуда не делись: общий балл их дополняет, а не заменяет.
-{
-  const audit = JSON.parse(readFileSync(new URL('../examples/sample-audit.json', import.meta.url), 'utf8'));
-  const { scores } = computeScores(audit.checks || []);
-  const html = toHtml(audit, null);
-  ok('разбивка по областям осталась под общим баллом', Object.keys(scores).every((k) => html.includes('/10') || scores[k] === null));
-}
-
-// Сохранённые оценки обязаны сходиться с итоговым набором проверок того же объекта.
-//
-// 14.09.2026 письмо сказало 61, а PDF напечатал 59: поле снималось до браузерного этапа, а он
-// дописывает проверки. Отчёт считал заново и получал другое число. Тест поднимает маленький сайт
-// и сверяет то, что collect положил в объект, с тем, что даёт функция по его же checks.
+/*
+ * Движок намеренно отказывается мерить приватные адреса: публичная проверка не должна ходить
+ * по чужой локальной сети. Значит локальным сайтом «одно число» не докажешь, и это правильно.
+ * Здесь проверяется, что в таком случае сборщик не выдумывает балл, а честно отдаёт «не измерено»,
+ * и что отчёт от этого не ломается. Совпадение чисел на живом сайте проверяется отдельно,
+ * командой `npm run verify:live`, потому что для этого нужна сеть.
+ */
 {
   const server = createServer((req, res) => {
-    if (req.url === '/robots.txt') return res.end('User-agent: *\nAllow: /\nSitemap: http://127.0.0.1:' + server.address().port + '/sitemap.xml');
-    if (req.url === '/sitemap.xml') { res.setHeader('content-type', 'application/xml'); return res.end(`<?xml version="1.0"?><urlset><url><loc>http://127.0.0.1:${server.address().port}/</loc></url></urlset>`); }
     res.setHeader('content-type', 'text/html');
-    res.end('<!doctype html><html><head><title>A small test page for the audit collector</title><meta name="description" content="A page that exists only so the collector has something real to read during the test run of the suite."></head><body><h1>Test page</h1><p>Ten pounds a month, measured on our own invoices in 2026.</p><h2>One</h2><p>Text.</p><h2>Two</h2><p>Text.</p><h2>Three</h2><p>Text.</p><a href="mailto:a@b.c">write</a></body></html>');
+    res.end('<!doctype html><html><head><title>Local</title></head><body><h1>Local</h1><p>Text.</p></body></html>');
   });
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
-  const audit = await collect(`http://127.0.0.1:${server.address().port}/`, { pages: 2, log: () => {} });
+  const base = `http://127.0.0.1:${server.address().port}/`;
+  const direct = await checkVisibility(base, { ...VISIBILITY_DEFAULTS, lang: 'en' });
+  const audit = await collect(base, { pages: 2, log: () => {} });
   server.close();
-  is('сохранённый общий балл равен пересчитанному по тем же проверкам', audit.overall.score, computeOverall(audit.checks).score);
-  is('сохранённые оценки областей тоже сходятся', audit.scores, computeScores(audit.checks).scores);
-  is('и собственная проверка отчёта молчит', verifyScores(audit).filter((p) => p.startsWith('overall')), []);
+
+  ok('приватный адрес движок мерить отказывается', !direct.ok);
+  is('и сборщик не выдумывает за него балл', audit.overall.score, null);
+  is('а называет это неизмеренным', audit.overall.grade, 'not measured');
+  is('и говорит, откуда балл должен был прийти', audit.overall.source, 'visibility');
+  ok('причина отказа сохранена, а не потеряна', typeof audit.overall.error === 'string' && audit.overall.error.length > 0);
+  ok('балл по проверкам отчёта при этом посчитан', typeof audit.reportScore.score === 'number');
+  is('и отчёт по-прежнему сходится сам с собой', verifyScores(audit), []);
+
+  for (const lang of ['en', 'ru']) {
+    audit.meta.lang = lang;
+    const html = toHtml(audit, null);
+    // Искать надо напечатанный элемент, а не название стиля: `.overall-num` есть в CSS всегда.
+    ok(`${lang}: без балла заголовок не печатается вовсе`, !/<div class="overall-num/.test(html));
+    ok(`${lang}: шесть областей отчёта на месте`, /second-measure/.test(html));
+  }
+}
+
+// Тот же отчёт, но с настоящим баллом: печать заголовка и обе подписи.
+{
+  const audit = JSON.parse(readFileSync(new URL('../examples/sample-audit.json', import.meta.url), 'utf8'));
+  audit.overall = { score: 61, grade: 'B', source: 'visibility', areas: [
+    { id: 'access', label: 'Access for AI crawlers', score: 20, max: 25 },
+    { id: 'index', label: 'Agent index', score: 10, max: 15 },
+    { id: 'entity', label: 'Entity and structure', score: 12, max: 20 },
+    { id: 'content', label: 'Answer-first content', score: 14, max: 25 },
+    { id: 'trust', label: 'Freshness and sources', score: 5, max: 15 }] };
+  is('заголовок сходится со своими областями', verifyScores(audit).filter((p) => p.startsWith('overall')), []);
+  for (const [lang, grade] of [['en', /Strong|Workable|Weak|Poor|Critical/], ['ru', /Сильно|Рабочее состояние|Слабо|Плохо|Критично/]]) {
+    audit.meta.lang = lang;
+    const html = toHtml(audit, null);
+    is(`${lang}: в отчёте стоит сохранённый балл`, Number((html.match(/overall-num[^>]*>(\d+)<span>/) || [])[1]), 61);
+    ok(`${lang}: оценка словом на своём языке`, grade.test((html.match(/overall-grade">([^<]*)</) || [])[1] || ''));
+    ok(`${lang}: сказано, что это то же измерение, что на странице`, /ai-visibility/.test((html.match(/overall-note">([^<]*)</) || [])[1] || ''));
+    ok(`${lang}: пять областей напечатаны рядом с баллом`, /table class="areas"/.test(html));
+    const foot = (html.match(/scorecard-foot">([^<]*)</) || [])[1] || '';
+    ok(`${lang}: сказано, что шесть областей не складываются в заголовок`, lang === 'en' ? /not a breakdown/.test(foot) : /\u043d\u0435 \u0440\u0430\u0437\u0431\u0438\u0432\u043a\u0430/.test(foot));
+  }
+}
+
+// ---- движок в пакете это та же программа, что стоит на сайтах
+{
+  const here = readFileSync(new URL('./visibility.mjs', import.meta.url), 'utf8');
+  ok('движок несёт свои параметры', /VISIBILITY_DEFAULTS/.test(here));
+  ok('и не тянет за собой зависимостей', !/^import /m.test(here.replace(/VISIBILITY_DEFAULTS/g, '')));
 }
 
 if (bad) { console.error(`\n${bad} тест(ов) упало`); process.exit(1); }

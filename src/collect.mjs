@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { renderedDom, compareReadings, jsBlindnessCheck } from './rendered.mjs';
 import { parse } from 'node-html-parser';
 import { localiseChecks } from './i18n.mjs';
+import { checkVisibility, VISIBILITY_DEFAULTS } from './visibility.mjs';
 
 /** Версия читается из своего package.json. Зашитая строка врала в каждом отчёте с первого релиза:
  *  в подвале стояло 0.1.0, когда пакет был уже 0.12.0, и покупатель не мог понять, чем его мерили. */
@@ -468,11 +469,27 @@ export async function collect(startUrl, { pages = 20, log = () => {}, backlinks 
     checks.push(jsBlindnessCheck(measured, lang));
   }
 
-  // Балл считается ПОСЛЕ всех этапов, включая браузерный: раньше он снимался до него, и на прогоне
-  // с `rendered: true` сохранённое поле расходилось с тем, что печатает отчёт. Письмо говорило 61,
-  // PDF печатал 59. Одна функция, один набор проверок, один момент: вот этот.
   const { scores, scoreBasis } = computeScores(checks);
-  const overall = computeOverall(checks);
+
+  /*
+   * Общий балл отчёта это тот же балл видимости, который считает бесплатная проверка на странице,
+   * и считает его тот же код с теми же параметрами.
+   *
+   * 14.09.2026 человек видел 46 на странице, 61 в письме и шесть областей из шестидесяти в PDF.
+   * Три числа про один сайт в одном дне. Пока их считали разные движки с разными рамками, сойтись
+   * они не могли, и единственный вывод, который делает читатель, это что цифры выдуманы.
+   *
+   * Параметры намеренно взяты из VISIBILITY_DEFAULTS, а не расширены под платный аудит: стоит дать
+   * тут больше страниц или времени, и число снова разойдётся со страницей. Глубина аудита живёт в
+   * его собственных шести областях и в списке задач, а не в этом числе.
+   */
+  log('visibility score');
+  const visibility = await checkVisibility(startUrl, { ...VISIBILITY_DEFAULTS, lang });
+  const overall = visibility.ok
+    ? { score: visibility.score, grade: visibility.grade, areas: visibility.areas, source: 'visibility', ms: visibility.ms }
+    : { score: null, grade: 'not measured', areas: [], source: 'visibility', error: visibility.error };
+  // Шесть областей отчёта остаются, но это другое измерение, а не разбивка общего балла.
+  const reportScore = computeOverall(checks);
 
   const localised = localiseChecks(checks, lang);
   const critical = checks.filter((c) => c.status === 'bad').map((c) => ({ title: c.label, text: `${c.value}${c.comment ? `. ${c.comment}` : ''}`, level: 'bad' }));
@@ -481,6 +498,7 @@ export async function collect(startUrl, { pages = 20, log = () => {}, backlinks 
     meta: { site: home.final, host, reachable: homeAnswered, collectedAt: new Date().toISOString(), tool: `@operstack/audit ${VERSION}`, auditType: lang === 'ru' ? 'Аудит по публичным сигналам' : 'External audit (no Search Console or analytics access)', lang, language: hp ? (hp.og?.locale || '') : '' },
     client: { name: '{{CLIENT NAME}}', subject: '{{What the site sells and where}}', reportDate: new Date().toISOString().slice(0, 10), preparedBy: preparedBy || process.env.OPERSTACK_PREPARED_BY || 'OperStack' },
     overall,
+    reportScore,
     scores,
     scoreBasis,
     summary: { lead: '{{Three sentences: what the site is, what works, what holds it back.}}', verdict: '{{Key takeaway in three sentences, ending with how fast the critical issues can be fixed.}}', priorities: ['{{Priority one}}', '{{Priority two}}', '{{Priority three}}'] },
@@ -613,17 +631,24 @@ export function verifyScores(audit) {
   const { scores } = computeScores(audit.checks || []);
   const show = (v) => (v === null || v === undefined ? 'not measured' : `${v}/10`);
   const problems = [];
-  // Общий балл проверяется первым: именно он стоит в заголовке отчёта, в письме и на странице,
-  // и именно он обесценивает всё остальное, если разойдётся со своими же проверками.
-  //
-  // Сверяем только когда поле есть. Отчёт, собранный версией до 0.16.0, его не содержит, и это не
-  // ложь, а старый формат: в вёрстке заголовок всё равно считается из проверок этого же файла,
-  // поэтому отсутствие поля не может напечатать неверное число.
-  if (audit.overall && audit.overall.score !== undefined) {
-    const overall = computeOverall(audit.checks || []);
-    const stored = audit.overall.score;
-    const show = (v) => (v === null || v === undefined ? 'not measured' : `${v}/100`);
-    if (stored !== overall.score) problems.push(`overall: the report says ${show(stored)}, the checks give ${show(overall.score)}`);
+  const show100 = (v) => (v === null || v === undefined ? 'not measured' : `${v}/100`);
+
+  /*
+   * Общий балл это балл видимости, и пересчитать его из проверок отчёта нельзя: его считает движок
+   * по своему обходу сайта. Зато можно проверить, что он сходится сам с собой: пять областей обязаны
+   * давать в сумме ровно заголовок. Ровно это и защищает от числа, взятого с потолка.
+   */
+  if (audit.overall && audit.overall.score !== undefined && audit.overall.score !== null && Array.isArray(audit.overall.areas) && audit.overall.areas.length) {
+    const sum = audit.overall.areas.reduce((acc, x) => acc + (Number(x.score) || 0), 0);
+    if (sum !== audit.overall.score) problems.push(`overall: the report says ${show100(audit.overall.score)}, its own five areas add up to ${sum}`);
+    const max = audit.overall.areas.reduce((acc, x) => acc + (Number(x.max) || 0), 0);
+    if (max !== 100) problems.push(`overall: the five areas are out of ${max}, not 100`);
+  }
+
+  // Балл по проверкам самого отчёта это отдельное измерение, и он пересчитывается из checks.
+  if (audit.reportScore && audit.reportScore.score !== undefined) {
+    const expected = computeOverall(audit.checks || []);
+    if (audit.reportScore.score !== expected.score) problems.push(`reportScore: the report says ${show100(audit.reportScore.score)}, the checks give ${show100(expected.score)}`);
   }
   for (const [label, expected] of Object.entries(scores)) {
     const stored = (audit.scores || {})[label];
