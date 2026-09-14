@@ -12,7 +12,7 @@ import { readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { collect, computeOverall, computeScores, verifyScores, SCORE_AREAS } from './collect.mjs';
 import { checkVisibility, VISIBILITY_DEFAULTS } from './visibility.mjs';
-import { toHtml } from './render.mjs';
+import { toHtml, overallSummary } from './render.mjs';
 
 let bad = 0;
 const ok = (n, c) => { if (c) console.log(`ok   ${n}`); else { bad++; console.error(`FAIL ${n}`); } };
@@ -184,6 +184,42 @@ ok('параметры нельзя поменять на ходу', Object.isFr
     audit.overall = { score: 61, grade: 'B', areas, source: 'visibility', basis: { pages: n, sitemapRead: true, sitemapUnchecked: false } };
     ok(`ru: ${n} ${word}`, new RegExp(`Прочитано ${n} ${word} сайта`).test(note(audit)));
   }
+}
+
+// ---- один блок «балл и области» на отчёт и на письмо
+//
+// Письмо собирало свою формулировку и свою цифру, отчёт свою. Разошлись. Теперь обе стороны
+// зовут overallSummary, и разойтись нечему: текст ровно один и живёт в пакете.
+{
+  const areas = [{ id: 'access', label: 'Can AI crawlers read it', score: 20, max: 25 },
+    { id: 'index', label: 'Is there a map for agents (llms.txt)', score: 5, max: 15 },
+    { id: 'entity', label: 'Is the entity clear (schema)', score: 12, max: 20 },
+    { id: 'content', label: 'Is there something to quote', score: 18, max: 25 },
+    { id: 'trust', label: 'Can it be dated and trusted', score: 8, max: 15 }];
+  const overall = { score: 63, grade: 'B', areas, source: 'visibility:reused', measuredAt: '2026-09-14T20:00:00.000Z', basis: { pages: 4, sitemapRead: true, sitemapUnchecked: false } };
+
+  const ru = overallSummary(overall, { lang: 'ru' });
+  const en = overallSummary(overall, { lang: 'en' });
+  is('заголовок письма это заголовок отчёта', ru.score, 63);
+  is('сумма пяти областей даёт заголовок', ru.areas.reduce((a, x) => a + x.score, 0), ru.score);
+  ok('оценка словом переведена', ru.grade === 'Рабочее состояние' && en.grade === 'Workable');
+  const fixture = JSON.parse(readFileSync(new URL('../examples/sample-audit.json', import.meta.url), 'utf8'));
+  fixture.meta.lang = 'ru'; fixture.overall = overall;
+  ok('подпись та же, что печатает отчёт', ru.note === (toHtml(fixture, null).match(/overall-note">([^<]*)</) || [])[1]);
+
+  // Замер мог пройти на английской странице, а отчёт уходит русскому покупателю: язык отчёта главнее.
+  ok('названия областей на языке отчёта, а не замера', ru.areas[0].label === 'Могут ли роботы ИИ прочитать сайт');
+  ok('и в английском они английские', en.areas[0].label === 'Can AI crawlers read it');
+  ok('в русском блоке нет английских названий', !ru.areas.some((x) => /[A-Za-z]{4}/.test(x.label.replace('llms.txt', ''))));
+
+  // Шесть областей отчёта это второе измерение, и подпись обязана это говорить в обоих языках.
+  ok('подзаголовок второго измерения есть', /Второе, отдельное измерение/.test(ru.secondMeasure) && /second, separate measurement/.test(en.secondMeasure));
+  ok('и сказано, что складывать их с заголовком не надо', /в сумме его не дают/.test(ru.secondMeasureFoot) && /will not add up to it/.test(en.secondMeasureFoot));
+  ok('в подписи второго измерения нет разметки', !/</.test(ru.secondMeasureFoot) && !/</.test(en.secondMeasureFoot));
+
+  // Балла может не быть: движок не мерит закрытые адреса. Тогда письмо не называет цифру вовсе.
+  is('без балла блока нет', overallSummary({ score: null, grade: 'not measured', areas: [] }, { lang: 'ru' }), null);
+  is('и на пустом объекте тоже', overallSummary(null, { lang: 'en' }), null);
 }
 
 // ---- движок в пакете это та же программа, что стоит на сайтах

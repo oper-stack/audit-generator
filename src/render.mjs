@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { computeScores, computeOverall } from './collect.mjs';
 import { localiseBasisNote, AREAS_RU } from './i18n.mjs';
+import { MESSAGES as VISIBILITY_MESSAGES } from './visibility.mjs';
 import { softenHex } from './agency.mjs';
 
 const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -101,6 +102,38 @@ const ruPages = (n) => { const a = Math.abs(n) % 100; const b = a % 10; if (a > 
 const ruPoints = (n) => { const a = Math.abs(n) % 100; const b = a % 10; if (a > 10 && a < 20) return 'баллов'; if (b === 1) return 'балл'; if (b >= 2 && b <= 4) return 'балла'; return 'баллов'; };
 
 const scoreClass = (n) => (n === null || n === undefined ? '' : n <= 3 ? 'low' : n <= 6 ? 'mid' : 'ok');
+
+/**
+ * Балл видимости и всё, что про него надо сказать словами, одним объектом.
+ *
+ * Простым языком: это тот самый блок, который стоит на первой странице отчёта. Письмо печатает
+ * его же. Раньше письмо собирало свою формулировку и свою цифру, и человек получал на странице
+ * одно, в письме другое, а в PDF третье. Теперь текст ровно один и живёт здесь.
+ *
+ * Названия областей берутся по `id`, а не по готовой подписи из замера: замер мог пройти на
+ * английской странице, а отчёт уходить русскому покупателю, и тогда подпись пришла бы на чужом
+ * языке. Язык отчёта главнее языка замера.
+ *
+ * Возвращает null, если балла нет: движок отказывается мерить закрытые и приватные адреса, и в
+ * этом случае честнее не называть цифру вовсе, чем подставить ноль.
+ */
+export function overallSummary(overall, { lang = 'en' } = {}) {
+  if (!overall || overall.score === null || overall.score === undefined) return null;
+  const key = lang === 'ru' ? 'ru' : 'en';
+  const L = LABELS[key];
+  const names = VISIBILITY_MESSAGES[key].area;
+  return {
+    label: L.overallLabel,
+    score: overall.score,
+    grade: (L.grades && L.grades[overall.grade]) || overall.grade,
+    note: L.overallNote(overall),
+    areas: (Array.isArray(overall.areas) ? overall.areas : []).map((x) => ({
+      id: x.id, label: (x.id && names[x.id]) || x.label, score: x.score, max: x.max,
+    })),
+    secondMeasure: L.secondMeasure,
+    secondMeasureFoot: L.scorecardFoot.replace(/<\/?strong>/g, ''),
+  };
+}
 
 export function checkNarrative(audit) {
   const out = [];
@@ -211,14 +244,13 @@ export function toHtml(audit, brand = null) {
    * независимое измерение по проверкам самого отчёта, а не разбивка заголовка. Сводить их с
    * заголовком не нужно и не получится, и об этом сказано словами.
    */
-  const overall = a.overall && a.overall.score !== undefined ? a.overall : null;
-  const overallAreas = overall && Array.isArray(overall.areas) ? overall.areas : [];
-  const overallBlock = !overall || overall.score === null ? '' : `<div class="overall">
-    <div class="overall-num ${scoreClass(Math.round(overall.score / 10))}">${overall.score}<span>/100</span></div>
-    <div class="overall-side"><div class="overall-label">${esc(L.overallLabel)}</div>
-      <div class="overall-grade">${esc((L.grades && L.grades[overall.grade]) || overall.grade)}</div>
-      <div class="overall-note">${esc(L.overallNote(overall))}</div></div></div>`
-    + (overallAreas.length ? `<table class="areas"><tr>${overallAreas.map((x) => `<th>${esc(x.label)}</th>`).join('')}</tr><tr>${overallAreas.map((x) => `<td>${x.score}<span>/${x.max}</span></td>`).join('')}</tr></table>` : '');
+  const head = overallSummary(a.overall, { lang: a.meta?.lang === 'ru' ? 'ru' : 'en' });
+  const overallBlock = !head ? '' : `<div class="overall">
+    <div class="overall-num ${scoreClass(Math.round(head.score / 10))}">${head.score}<span>/100</span></div>
+    <div class="overall-side"><div class="overall-label">${esc(head.label)}</div>
+      <div class="overall-grade">${esc(head.grade)}</div>
+      <div class="overall-note">${esc(head.note)}</div></div></div>`
+    + (head.areas.length ? `<table class="areas"><tr>${head.areas.map((x) => `<th>${esc(x.label)}</th>`).join('')}</tr><tr>${head.areas.map((x) => `<td>${x.score}<span>/${x.max}</span></td>`).join('')}</tr></table>` : '');
   const scoreCards = Object.entries(measured).map(([label, n]) => {
     const basis = scoreBasis[label] || {};
     const shown = (L.areas && L.areas[label]) || label;
