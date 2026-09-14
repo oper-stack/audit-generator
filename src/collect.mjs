@@ -500,9 +500,14 @@ export async function collect(startUrl, { pages = 20, log = () => {}, backlinks 
   if (visibility) log('visibility score: taken from the check the visitor already ran');
   else { log('visibility score'); visibility = await checkVisibility(startUrl, { ...VISIBILITY_DEFAULTS, lang }); }
   const measuredAt = visibility && visibility.checkedAt ? visibility.checkedAt : null;
+  /* Из чего сложился балл, словами для отчёта: сколько страниц прочитано и дочиталась ли карта
+   * сайта. Без этого подпись под баллом обещает точность, которой у восьмисекундной проверки нет. */
+  const basis = visibility && visibility.ok
+    ? { pages: (visibility.sample || []).length, sitemapRead: Boolean(visibility.sitemap && visibility.sitemap.found), sitemapUnchecked: Boolean(visibility.sitemap && visibility.sitemap.unchecked) }
+    : null;
   const overall = visibility && visibility.ok
-    ? { score: visibility.score, grade: visibility.grade, areas: visibility.areas, source: givenVisibility ? 'visibility:reused' : 'visibility', measuredAt, ms: visibility.ms }
-    : { score: null, grade: 'not measured', areas: [], source: givenVisibility ? 'visibility:reused' : 'visibility', error: (visibility && visibility.error) || 'no visibility result' };
+    ? { score: visibility.score, grade: visibility.grade, areas: visibility.areas, basis, source: givenVisibility ? 'visibility:reused' : 'visibility', measuredAt, ms: visibility.ms }
+    : { score: null, grade: 'not measured', areas: [], basis: null, source: givenVisibility ? 'visibility:reused' : 'visibility', error: (visibility && visibility.error) || 'no visibility result' };
   // Шесть областей отчёта остаются, но это другое измерение, а не разбивка общего балла.
   const reportScore = computeOverall(checks);
 

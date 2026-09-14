@@ -147,6 +147,45 @@ ok('параметры нельзя поменять на ходу', Object.isFr
   is('и отчёт печатает именно его', Number((toHtml(audit, null).match(/overall-num[^>]*>(\d+)<span>/) || [])[1]), 63);
 }
 
+/*
+ * Подпись под баллом обязана объяснить человеку три вещи, иначе он прочитает разницу в пару
+ * пунктов как ошибку: откуда взялось число, что успели прочитать, и почему повтор может дать
+ * иначе. Это критерий приёмки, а не украшение: человек, прочитавший сначала страницу, а потом
+ * отчёт, не должен удивиться.
+ */
+{
+  const audit = JSON.parse(readFileSync(new URL('../examples/sample-audit.json', import.meta.url), 'utf8'));
+  const areas = [{ id: 'access', label: 'Access', score: 20, max: 25 }, { id: 'index', label: 'Index', score: 10, max: 15 },
+    { id: 'entity', label: 'Entity', score: 12, max: 20 }, { id: 'content', label: 'Content', score: 14, max: 25 }, { id: 'trust', label: 'Trust', score: 5, max: 15 }];
+  const note = (a) => ((toHtml(a, null).match(/overall-note">([^<]*)</) || [])[1] || '');
+
+  for (const lang of ['en', 'ru']) {
+    audit.meta.lang = lang;
+
+    audit.overall = { score: 61, grade: 'B', areas, source: 'visibility:reused', measuredAt: '2026-09-14T20:00:00.000Z', basis: { pages: 4, sitemapRead: true, sitemapUnchecked: false } };
+    const reused = note(audit);
+    ok(`${lang}: сказано, что число уже видели на проверке`, lang === 'en' ? /already saw on the free check/.test(reused) : /уже видели в бесплатной проверке/.test(reused));
+    ok(`${lang}: сказано, что здесь не меряли заново`, lang === 'en' ? /not measured again here/.test(reused) : /не меряется заново/.test(reused));
+    ok(`${lang}: названа дата измерения`, /2026-09-14/.test(reused));
+    ok(`${lang}: сказано, сколько страниц прочитано`, /4/.test(reused));
+    ok(`${lang}: предупреждает про разброс в пункт-другой`, lang === 'en' ? /a point or two/.test(reused) : /на пункт-другой/.test(reused));
+
+    audit.overall = { score: 61, grade: 'B', areas, source: 'visibility', basis: { pages: 1, sitemapRead: false, sitemapUnchecked: true } };
+    const fresh = note(audit);
+    ok(`${lang}: при собственном измерении сказано именно это`, lang === 'en' ? /Measured here by the same code/.test(fresh) : /Измерено здесь тем же кодом/.test(fresh));
+    ok(`${lang}: непрочитанная карта сайта названа, а не спрятана`, lang === 'en' ? /sitemap did not answer in time/.test(fresh) : /карта сайта не ответила вовремя/.test(fresh));
+    ok(`${lang}: и сказано, что она не зачтена в минус`, lang === 'en' ? /not counted against the score/.test(fresh) : /не зачтено ни в плюс, ни в минус/.test(fresh));
+    ok(`${lang}: в подписи нет чужого языка`, lang === 'en' ? !/[А-Яа-яЁё]/.test(fresh) : !/Measured|sitemap did/.test(fresh));
+  }
+
+  // Русское склонение в подписи: человек это читает.
+  audit.meta.lang = 'ru';
+  for (const [n, word] of [[1, 'страница'], [2, 'страницы'], [5, 'страниц'], [11, 'страниц'], [21, 'страница']]) {
+    audit.overall = { score: 61, grade: 'B', areas, source: 'visibility', basis: { pages: n, sitemapRead: true, sitemapUnchecked: false } };
+    ok(`ru: ${n} ${word}`, new RegExp(`Прочитано ${n} ${word} сайта`).test(note(audit)));
+  }
+}
+
 // ---- движок в пакете это та же программа, что стоит на сайтах
 {
   const here = readFileSync(new URL('./visibility.mjs', import.meta.url), 'utf8');

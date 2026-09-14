@@ -29,7 +29,15 @@ const LABELS = {
     grades: { A: 'Strong', B: 'Workable', C: 'Weak', D: 'Poor', E: 'Critical' },
     // Заголовок это то же измерение, что на странице проверки. Подпись обязана это говорить,
     // иначе читатель снова начнёт сводить его с шестью областями ниже.
-    overallNote: 'The same measurement the free check at oper-stack.com/ai-visibility gives for this site: the same code, the same settings. The five areas below add up to it exactly, so you can recompute it by hand.',
+    // Подпись обязана сказать три вещи: откуда число, что именно успели прочитать, и почему
+    // повтор может дать на пункт-другой иначе. Без последнего человек читает разницу как ошибку.
+    overallNote: (o) => {
+      const read = o.basis ? `It was read from ${o.basis.pages} page${o.basis.pages === 1 ? '' : 's'} of the site${o.basis.sitemapUnchecked ? ', and the sitemap did not answer in time, which is not counted against the score either way' : o.basis.sitemapRead ? ' and its sitemap' : ''}. ` : '';
+      const where = o.source === 'visibility:reused'
+        ? `This is the same figure you already saw on the free check${o.measuredAt ? ` on ${String(o.measuredAt).slice(0, 10)}` : ''}. It is not measured again here, so the page, the email and this report always carry one number. `
+        : 'Measured here by the same code and the same settings as the free check at oper-stack.com/ai-visibility. ';
+      return `${where}${read}The five areas below add up to it exactly, so you can recompute it by hand. Running the check again can move it by a point or two: a check that answers in time on one run may not on the next, and this score never counts against a site what it could not read.`;
+    },
     secondMeasure: 'A second, separate measurement: how this report scores its own checks',
     secOverview: 'Site overview', overviewEyebrow: '02 · Overview', whatSiteIs: 'What the site is', parameter: 'Parameter', value: 'Value', pagesSampled: 'Pages sampled', colUrl: 'URL', colTitle: 'Title', colWords: 'Words',
     secCritical: 'Critical issues', criticalEyebrow: '03 · P0', criticalTitle: 'Critical issues, fix first', whatItCosts: 'What it costs', theFix: 'Fix', noBody: 'This issue has no description in the audit file.', noCritical: 'No critical defects were found in the public signals.',
@@ -56,7 +64,15 @@ const LABELS = {
     notMeasured: 'не измерялось',
     overallLabel: 'Балл видимости в ИИ',
     grades: { A: 'Сильно', B: 'Рабочее состояние', C: 'Слабо', D: 'Плохо', E: 'Критично' },
-    overallNote: 'То же измерение, что даёт бесплатная проверка на oper-stack.com/ai-visibility для этого сайта: тот же код, те же настройки. Пять областей ниже дают в сумме ровно этот балл, его можно сложить руками.',
+    overallNote: (o) => {
+      const p = o.basis ? o.basis.pages : 0;
+      const pl = ruPages(p);
+      const read = o.basis ? `Прочитано ${p} ${pl} сайта${o.basis.sitemapUnchecked ? ', а карта сайта не ответила вовремя, и это не зачтено ни в плюс, ни в минус' : o.basis.sitemapRead ? ' и его карта' : ''}. ` : '';
+      const where = o.source === 'visibility:reused'
+        ? `Это ровно то число, которое вы уже видели в бесплатной проверке${o.measuredAt ? ` ${String(o.measuredAt).slice(0, 10)}` : ''}. Здесь оно не меряется заново, поэтому страница, письмо и этот отчёт всегда несут одно число. `
+        : 'Измерено здесь тем же кодом и с теми же настройками, что у бесплатной проверки на oper-stack.com/ai-visibility. ';
+      return `${where}${read}Пять областей ниже дают в сумме ровно этот балл, его можно сложить руками. Повторная проверка может дать на пункт-другой иначе: проверка, которая успела ответить в один прогон, может не успеть в следующий, а балл никогда не засчитывает сайту в минус то, что не удалось прочитать.`;
+    },
     secondMeasure: 'Второе, отдельное измерение: как этот отчёт оценивает собственные проверки',
     secOverview: 'О сайте', overviewEyebrow: '02 · Обзор', whatSiteIs: 'Что это за сайт', parameter: 'Параметр', value: 'Значение', pagesSampled: 'Проверенные страницы', colUrl: 'Адрес', colTitle: 'Заголовок', colWords: 'Слов',
     secCritical: 'Критичное', criticalEyebrow: '03 · Срочно', criticalTitle: 'Что чинить первым', whatItCosts: 'Чем это грозит', theFix: 'Как чинится', noBody: 'У этой проблемы нет описания в файле аудита.', noCritical: 'Критичных дефектов в публичных сигналах не найдено.',
@@ -78,6 +94,9 @@ const LABELS = {
 const STATUS_KEYS = { ok: 'statusOk', warn: 'statusWarn', bad: 'statusBad', na: 'statusNa' };
 const STATUS_CLASS = { ok: 'status-ok', warn: 'status-warn', bad: 'status-bad', na: 'status-na' };
 const STATUS_UNUSED = { ok: ['✓ OK', 'status-ok'], warn: ['△ Partial', 'status-warn'], bad: ['✗ Problem', 'status-bad'], na: ['· Note', 'status-na'] };
+/** Склонение «страница»: 1 страница, 4 страницы, 5 страниц. Подпись под баллом читает человек. */
+const ruPages = (n) => { const a = Math.abs(n) % 100; const b = a % 10; if (a > 10 && a < 20) return 'страниц'; if (b === 1) return 'страница'; if (b >= 2 && b <= 4) return 'страницы'; return 'страниц'; };
+
 /** Склонение «балл» для русской подписи под общим баллом: 21 балл, 72 балла, 75 баллов. */
 const ruPoints = (n) => { const a = Math.abs(n) % 100; const b = a % 10; if (a > 10 && a < 20) return 'баллов'; if (b === 1) return 'балл'; if (b >= 2 && b <= 4) return 'балла'; return 'баллов'; };
 
@@ -198,7 +217,7 @@ export function toHtml(audit, brand = null) {
     <div class="overall-num ${scoreClass(Math.round(overall.score / 10))}">${overall.score}<span>/100</span></div>
     <div class="overall-side"><div class="overall-label">${esc(L.overallLabel)}</div>
       <div class="overall-grade">${esc((L.grades && L.grades[overall.grade]) || overall.grade)}</div>
-      <div class="overall-note">${esc(L.overallNote)}</div></div></div>`
+      <div class="overall-note">${esc(L.overallNote(overall))}</div></div></div>`
     + (overallAreas.length ? `<table class="areas"><tr>${overallAreas.map((x) => `<th>${esc(x.label)}</th>`).join('')}</tr><tr>${overallAreas.map((x) => `<td>${x.score}<span>/${x.max}</span></td>`).join('')}</tr></table>` : '');
   const scoreCards = Object.entries(measured).map(([label, n]) => {
     const basis = scoreBasis[label] || {};
