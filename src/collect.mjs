@@ -19,7 +19,11 @@ const VERSION = (() => {
 
 const UA = `Mozilla/5.0 (compatible; OperStackAudit/${VERSION}; +https://oper-stack.com)`;
 
-async function get(url, { method = 'GET', timeout = 15000 } = {}) {
+/** Таймаут запроса раньше был зашит числом и наружу не выводился, поэтому поднять его со стороны
+ *  очереди писем было нельзя. Теперь это значение по умолчанию, которое collect() выставляет из опций. */
+let REQUEST_TIMEOUT = 15000;
+
+async function get(url, { method = 'GET', timeout = REQUEST_TIMEOUT } = {}) {
   const c = new AbortController(); const t = setTimeout(() => c.abort(), timeout);
   const started = Date.now();
   try {
@@ -161,21 +165,49 @@ function analysePage(url, html) {
   return { url, title, citedParagraphs, figureParagraphs, titleLength: title.length, description, descriptionLength: description.length, descriptionGarbage: shortcode, h1Count: h1s.length, h1: h1s[0] || '', images: imgs.length, imagesNoAlt: imgsNoAlt, canonical, robots, viewport, og, twitter, generator, hreflang, scripts, stylesheets, schemaTypes: [...new Set(schemaTypes)], words, links, dates, firstPara: firstPara.slice(0, 220), firstParaWords, answerFirst, h2Count, tables, sourcePhrases , telLinks, mailLinks, messengerLinks, contactPages, forms: realForms.length, formFields, formDepth, ctaFirstScreen, trust };
 }
 
-async function readSitemap(url, seen = new Set(), depth = 0) {
-  if (seen.has(url) || depth > 3) return [];
-  seen.add(url);
-  const r = await get(url);
-  if (!r.ok) return [];
-  const locs = [...r.text.matchAll(/<loc>\s*([^<\s]+)\s*<\/loc>/g)].map((m) => m[1]);
-  const out = [];
-  for (const l of locs) {
-    if (/\.xml(\.gz)?$/i.test(l) || /sitemap/i.test(l) && !/\.(html?|php)$/i.test(l) && r.text.includes('<sitemapindex')) out.push(...(await readSitemap(l, seen, depth + 1)));
-    else out.push(l);
+/** Карты сайта на живых коммерческих сайтах бывают вложенными десятками: у одного московского
+ *  агентства недвижимости в sitemap.xml лежит 79 вложенных карт. Раньше мы заходили в каждую без
+ *  ограничений, по 15 секунд на запрос, и бесплатная проверка упиралась в таймаут ещё до того, как
+ *  прочитает хоть одну страницу: отчёт приходил пустым или не приходил вовсе.
+ *
+ *  Поэтому три ограничителя: сколько файлов читаем, сколько всего на это тратим и сколько адресов
+ *  набираем. Для выборки в двадцать страниц первых файлов хватает с запасом.
+ *
+ *  Если остановились раньше, это возвращается наружу и попадает в отчёт словами. Выдать часть за
+ *  целое нельзя: «1 200 адресов в карте сайта» на сайте с сорока тысячами адресов это неверное
+ *  измерение, а не округление. */
+async function readSitemap(startUrl, { maxFiles = 6, budgetMs = 45000, maxUrls = 5000, timeout } = {}) {
+  const deadline = Date.now() + budgetMs;
+  const seen = new Set();
+  const queue = [{ url: startUrl, depth: 0 }];
+  const urls = [];
+  let filesRead = 0; let nestedFound = 0; let stopped = '';
+  while (queue.length) {
+    if (filesRead >= maxFiles) { stopped = 'files'; break; }
+    if (Date.now() > deadline) { stopped = 'time'; break; }
+    if (urls.length >= maxUrls) { stopped = 'urls'; break; }
+    const { url, depth } = queue.shift();
+    if (seen.has(url) || depth > 3) continue;
+    seen.add(url);
+    const r = await get(url, timeout ? { timeout } : {});
+    filesRead++;
+    if (!r.ok) continue;
+    // Спускаться вглубь можно только из индекса карт. Прежнее условие из-за приоритета операторов
+    // читало `A || (B && C && D)` и уходило в рекурсию по любой ссылке на .xml, даже из обычного urlset.
+    const isIndex = /<sitemapindex/i.test(r.text);
+    for (const m of r.text.matchAll(/<loc>\s*([^<\s]+)\s*<\/loc>/g)) {
+      const l = m[1];
+      if (isIndex && (/\.xml(\.gz)?$/i.test(l) || (/sitemap/i.test(l) && !/\.(html?|php)$/i.test(l)))) { nestedFound += 1; queue.push({ url: l, depth: depth + 1 }); }
+      else urls.push(l);
+    }
   }
-  return out;
+  return { urls, filesRead, nestedFound, pending: queue.length, stopped };
 }
 
-export async function collect(startUrl, { pages = 20, log = () => {}, backlinks = null, lang = 'en', rendered = false, renderedPages = 3, preparedBy = '' } = {}) {
+export const __readSitemap = readSitemap;
+
+export async function collect(startUrl, { pages = 20, log = () => {}, backlinks = null, lang = 'en', rendered = false, renderedPages = 3, preparedBy = '', requestTimeout = 15000, sitemapBudgetMs = 45000, sitemapMaxFiles = 6 } = {}) {
+  REQUEST_TIMEOUT = requestTimeout;
   const opts = { backlinks };
   const origin = new URL(startUrl).origin;
   const host = new URL(startUrl).host;
@@ -226,12 +258,22 @@ export async function collect(startUrl, { pages = 20, log = () => {}, backlinks 
   log('sitemaps');
   const candidates = sitemapUrls.length ? sitemapUrls : [`${origin}/sitemap.xml`, `${origin}/sitemap_index.xml`, `${origin}/sitemap-index.xml`];
   let sitemapPages = []; let sitemapStatus = 'missing'; let sitemapSource = '';
+  let sitemapRead = { filesRead: 0, nestedFound: 0, pending: 0, stopped: '' };
   for (const u of candidates) {
     const r = await get(u);
-    if (r.ok && /<(urlset|sitemapindex)/.test(r.text)) { sitemapPages = await readSitemap(u); sitemapStatus = 'ok'; sitemapSource = u; break; }
+    if (r.ok && /<(urlset|sitemapindex)/.test(r.text)) {
+      sitemapRead = await readSitemap(u, { budgetMs: sitemapBudgetMs, maxFiles: sitemapMaxFiles });
+      sitemapPages = sitemapRead.urls; sitemapStatus = 'ok'; sitemapSource = u; break;
+    }
     if (sitemapUrls.includes(u)) { sitemapStatus = `HTTP ${r.status}`; sitemapSource = u; }
   }
-  checks.push(row('sitemap', 'technical', 'XML sitemap', sitemapStatus === 'ok' ? 'ok' : 'bad', sitemapStatus === 'ok' ? `${sitemapPages.length} URL(s) in ${sitemapSource}` : sitemapSource ? `${sitemapSource} answers ${sitemapStatus}` : 'no sitemap found at the usual paths', sitemapStatus !== 'ok' && sitemapUrls.length ? 'robots.txt points at a sitemap that does not answer' : ''));
+  // Когда обход остановлен ограничителем, в отчёте стоит число прочитанного, а не выдуманное целое.
+  const sitemapValue = sitemapStatus !== 'ok'
+    ? (sitemapSource ? `${sitemapSource} answers ${sitemapStatus}` : 'no sitemap found at the usual paths')
+    : sitemapRead.stopped
+      ? `${sitemapPages.length} URL(s) read from ${sitemapRead.filesRead} of ${sitemapRead.filesRead + sitemapRead.pending} sitemap file(s) in ${sitemapSource}`
+      : `${sitemapPages.length} URL(s) in ${sitemapSource}`;
+  checks.push(row('sitemap', 'technical', 'XML sitemap', sitemapStatus === 'ok' ? 'ok' : 'bad', sitemapValue, sitemapStatus !== 'ok' && sitemapUrls.length ? 'robots.txt points at a sitemap that does not answer' : sitemapRead.stopped ? 'a large nested sitemap: the pages below were sampled from the files that were read, not from every file' : ''));
   const foreign = sitemapPages.filter((u) => { try { return new URL(u).host !== host && new URL(u).host !== altHost; } catch { return true; } });
   if (foreign.length) checks.push(row('sitemap-foreign', 'technical', 'Sitemap lists other hosts', 'bad', `${foreign.length} URL(s) on other hosts, e.g. ${foreign[0]}`));
 
