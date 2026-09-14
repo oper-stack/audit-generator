@@ -449,6 +449,10 @@ export async function collect(startUrl, { pages = 20, log = () => {}, backlinks 
   checks.push(row('conv-messenger', 'conversion', 'A messenger link', msg.length ? 'ok' : 'warn', msg.length ? `on ${msg.length} of ${pagesForTrust.length} sampled page(s)` : 'none on the sampled pages', msg.length ? '' : 'for an international audience reading on a phone, one messenger link is usually worth more than a form'));
 
   const { scores, scoreBasis } = computeScores(checks);
+
+  // Один балл на весь отчёт: его же берут страница проверки и письмо, чтобы цифры не спорили.
+
+  const overall = computeOverall(checks);
   // Оценки считаются до перевода: язык на цифры не влияет.
   // Сколько текста не видно без выполнения скриптов. Меряется настоящим браузером и только по
   // просьбе: запуск браузера это десятки секунд на страницу, и еженедельному мониторингу это ни к
@@ -475,6 +479,7 @@ export async function collect(startUrl, { pages = 20, log = () => {}, backlinks 
   return {
     meta: { site: home.final, host, reachable: homeAnswered, collectedAt: new Date().toISOString(), tool: `@operstack/audit ${VERSION}`, auditType: lang === 'ru' ? 'Аудит по публичным сигналам' : 'External audit (no Search Console or analytics access)', lang, language: hp ? (hp.og?.locale || '') : '' },
     client: { name: '{{CLIENT NAME}}', subject: '{{What the site sells and where}}', reportDate: new Date().toISOString().slice(0, 10), preparedBy: preparedBy || process.env.OPERSTACK_PREPARED_BY || 'OperStack' },
+    overall,
     scores,
     scoreBasis,
     summary: { lead: '{{Three sentences: what the site is, what works, what holds it back.}}', verdict: '{{Key takeaway in three sentences, ending with how fast the critical issues can be fixed.}}', priorities: ['{{Priority one}}', '{{Priority two}}', '{{Priority three}}'] },
@@ -540,13 +545,44 @@ function median(a) { const s = [...a].sort((x, y) => x - y); return s.length ? s
  * "not measured", never as a low score. Nothing in a report may be scored by hand.
  */
 export const SCORE_AREAS = [
-  { label: 'SEO, technical', groups: ['technical'] },
-  { label: 'SEO, content and structure', groups: ['onpage', 'content'] },
-  { label: 'AEO, answers and snippets', groups: ['aeo'] },
-  { label: 'GEO, visibility in AI systems', groups: ['geo'] },
-  { label: 'Off-page and trust', groups: ['offpage'] },
-  { label: 'Conversion and UX', groups: ['conversion'] },
+  { label: 'SEO, technical', groups: ['technical'], weight: 20 },
+  { label: 'SEO, content and structure', groups: ['onpage', 'content'], weight: 20 },
+  { label: 'AEO, answers and snippets', groups: ['aeo'], weight: 15 },
+  { label: 'GEO, visibility in AI systems', groups: ['geo'], weight: 20 },
+  { label: 'Off-page and trust', groups: ['offpage'], weight: 15 },
+  { label: 'Conversion and UX', groups: ['conversion'], weight: 10 },
 ];
+
+/**
+ * Один балл из ста на весь продукт.
+ *
+ * 14.09.2026 Максим получил письмо, где в теле стояло «45 из 100», а во вложенном PDF шесть
+ * областей давали 44 из 60, то есть 73 процента. Человек читает в одном документе «ужас» и «почти
+ * всё хорошо» и делает единственный возможный вывод: цифры выдуманы. Считали их два разных движка
+ * с разными рамками, и это обесценивало оба продукта сразу.
+ *
+ * Поэтому балл считается здесь и только здесь, а страница проверки, письмо и отчёт берут его
+ * отсюда. Веса ниже это решение, а не измерение, и поэтому они напечатаны в самом отчёте: покупатель
+ * должен уметь пересчитать цифру руками, а не верить ей на слово.
+ *
+ * Область, которую этот прогон не измерял, не штрафуется и не считается за ноль: её вес выкидывается
+ * из знаменателя, и отчёт говорит, из чего именно сложился балл. Ноль за неизмеренное это враньё,
+ * ровно как «0 знаков» вместо «описания нет».
+ */
+export function computeOverall(checks) {
+  const { scores, scoreBasis } = computeScores(checks);
+  const parts = SCORE_AREAS
+    .map((a) => ({ label: a.label, weight: a.weight, score: scores[a.label], basis: scoreBasis[a.label] }))
+    .filter((p) => p.score !== null && p.score !== undefined);
+  const weighed = parts.reduce((sum, p) => sum + p.weight, 0);
+  if (!weighed) return { score: null, grade: 'not measured', weighed: 0, parts: [], note: 'nothing was measured, so there is no score' };
+  const score = Math.round(parts.reduce((sum, p) => sum + (p.score / 10) * p.weight, 0) / weighed * 100);
+  const grade = score >= 80 ? 'strong' : score >= 60 ? 'workable' : score >= 40 ? 'weak' : 'critical';
+  const note = weighed === 100
+    ? `weighted from all ${parts.length} areas`
+    : `weighted from ${parts.length} of ${SCORE_AREAS.length} areas: ${weighed} of 100 points were measurable on this site`;
+  return { score, grade, weighed, parts, note };
+}
 
 /**
  * Score every area from the collected checks: ok 1, warn 0.5, bad 0, na ignored, rounded to 0-10.
@@ -576,6 +612,18 @@ export function verifyScores(audit) {
   const { scores } = computeScores(audit.checks || []);
   const show = (v) => (v === null || v === undefined ? 'not measured' : `${v}/10`);
   const problems = [];
+  // Общий балл проверяется первым: именно он стоит в заголовке отчёта, в письме и на странице,
+  // и именно он обесценивает всё остальное, если разойдётся со своими же проверками.
+  //
+  // Сверяем только когда поле есть. Отчёт, собранный версией до 0.16.0, его не содержит, и это не
+  // ложь, а старый формат: в вёрстке заголовок всё равно считается из проверок этого же файла,
+  // поэтому отсутствие поля не может напечатать неверное число.
+  if (audit.overall && audit.overall.score !== undefined) {
+    const overall = computeOverall(audit.checks || []);
+    const stored = audit.overall.score;
+    const show = (v) => (v === null || v === undefined ? 'not measured' : `${v}/100`);
+    if (stored !== overall.score) problems.push(`overall: the report says ${show(stored)}, the checks give ${show(overall.score)}`);
+  }
   for (const [label, expected] of Object.entries(scores)) {
     const stored = (audit.scores || {})[label];
     const actual = stored === undefined ? null : stored;

@@ -7,7 +7,7 @@ import { writeFileSync, existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { computeScores } from './collect.mjs';
+import { computeScores, computeOverall } from './collect.mjs';
 import { localiseBasisNote, AREAS_RU } from './i18n.mjs';
 import { softenHex } from './agency.mjs';
 
@@ -25,6 +25,13 @@ const LABELS = {
     secSummary: 'Executive summary', summaryEyebrow: '01 · Summary', keyTakeaway: 'Key takeaway:', threePriorities: 'Three priorities',
     scorecardFoot: 'Each score counts the checks in this report: a check that passes scores one, a check that needs attention a half, a failing check nothing. An area marked <strong>not measured</strong> is an area this audit does not test, and is never scored on an impression. Every figure here can be recomputed from section 04 onwards.',
     notMeasured: 'not measured',
+    overallLabel: 'Overall score',
+    grades: { strong: 'Strong', workable: 'Workable', weak: 'Weak', critical: 'Critical' },
+    // Веса это решение, а не измерение, поэтому они напечатаны здесь: балл должен пересчитываться руками.
+    overallNote: (o) => `Weighted from the areas below: ${o.parts.map((x) => `${x.label} ${x.weight}`).join(', ')}. `
+      + (o.weighed === 100
+        ? 'Every area was measurable on this site.'
+        : `Only ${o.weighed} of 100 points were measurable here, so the areas this audit could not read are left out of the total rather than scored zero.`),
     secOverview: 'Site overview', overviewEyebrow: '02 · Overview', whatSiteIs: 'What the site is', parameter: 'Parameter', value: 'Value', pagesSampled: 'Pages sampled', colUrl: 'URL', colTitle: 'Title', colWords: 'Words',
     secCritical: 'Critical issues', criticalEyebrow: '03 · P0', criticalTitle: 'Critical issues, fix first', whatItCosts: 'What it costs', theFix: 'Fix', noBody: 'This issue has no description in the audit file.', noCritical: 'No critical defects were found in the public signals.',
     secTechnical: 'Technical SEO', technicalEyebrow: '04 · Technical', technicalTitle: 'Technical and on-page checklist', colCheck: 'Check', colStatus: 'Status', colFinding: 'Finding',
@@ -48,6 +55,12 @@ const LABELS = {
     secSummary: 'Главное', summaryEyebrow: '01 · Итог', keyTakeaway: 'Главный вывод:', threePriorities: 'Три приоритета',
     scorecardFoot: 'Каждая оценка считает проверки из этого же отчёта: пройденная проверка это балл, спорная половина балла, проваленная ноль. Область с пометкой <strong>не измерялось</strong> это область, которую аудит не проверяет, и она никогда не оценивается на глаз. Любую цифру отсюда можно пересчитать по разделам начиная с четвёртого.',
     notMeasured: 'не измерялось',
+    overallLabel: 'Общий балл',
+    grades: { strong: 'Сильно', workable: 'Рабочее состояние', weak: 'Слабо', critical: 'Критично' },
+    overallNote: (o) => `Взвешен по областям ниже: ${o.parts.map((x) => `${AREAS_RU[x.label] || x.label} ${x.weight}`).join(', ')}. `
+      + (o.weighed === 100
+        ? 'Все области на этом сайте удалось измерить.'
+        : `Измеримыми здесь оказались ${o.weighed} ${ruPoints(o.weighed)} из 100, поэтому области, которые аудит прочитать не смог, не попали в знаменатель, а не получили ноль.`),
     secOverview: 'О сайте', overviewEyebrow: '02 · Обзор', whatSiteIs: 'Что это за сайт', parameter: 'Параметр', value: 'Значение', pagesSampled: 'Проверенные страницы', colUrl: 'Адрес', colTitle: 'Заголовок', colWords: 'Слов',
     secCritical: 'Критичное', criticalEyebrow: '03 · Срочно', criticalTitle: 'Что чинить первым', whatItCosts: 'Чем это грозит', theFix: 'Как чинится', noBody: 'У этой проблемы нет описания в файле аудита.', noCritical: 'Критичных дефектов в публичных сигналах не найдено.',
     secTechnical: 'Техническое SEO', technicalEyebrow: '04 · Техника', technicalTitle: 'Техническая проверка и страницы', colCheck: 'Проверка', colStatus: 'Статус', colFinding: 'Что нашли',
@@ -68,6 +81,9 @@ const LABELS = {
 const STATUS_KEYS = { ok: 'statusOk', warn: 'statusWarn', bad: 'statusBad', na: 'statusNa' };
 const STATUS_CLASS = { ok: 'status-ok', warn: 'status-warn', bad: 'status-bad', na: 'status-na' };
 const STATUS_UNUSED = { ok: ['✓ OK', 'status-ok'], warn: ['△ Partial', 'status-warn'], bad: ['✗ Problem', 'status-bad'], na: ['· Note', 'status-na'] };
+/** Склонение «балл» для русской подписи под общим баллом: 21 балл, 72 балла, 75 баллов. */
+const ruPoints = (n) => { const a = Math.abs(n) % 100; const b = a % 10; if (a > 10 && a < 20) return 'баллов'; if (b === 1) return 'балл'; if (b >= 2 && b <= 4) return 'балла'; return 'баллов'; };
+
 const scoreClass = (n) => (n === null || n === undefined ? '' : n <= 3 ? 'low' : n <= 6 ? 'mid' : 'ok');
 
 export function checkNarrative(audit) {
@@ -110,6 +126,13 @@ function css() {
   .page-header { display: flex; justify-content: space-between; align-items: center; padding-bottom: 3mm; margin-bottom: 6mm; border-bottom: 1px solid var(--rule); font-size: 8pt; color: var(--muted); }
   .page-header strong { color: var(--accent); }
   .page-footer { position: absolute; bottom: 9mm; left: var(--pad); right: var(--pad); display: flex; justify-content: space-between; font-size: 8pt; color: var(--muted); border-top: 1px solid var(--rule); padding-top: 2.5mm; }
+  .overall { display: flex; align-items: center; gap: 6mm; border: 1px solid var(--rule); border-radius: 5px; padding: 5mm 6mm; background: #f4f8f8; margin: 5mm 0 4mm; }
+  .overall-num { font-family: "Fraunces", Georgia, serif; font-size: 44pt; font-weight: 600; line-height: 1; color: var(--accent); font-variant-numeric: tabular-nums; }
+  .overall-num span { font-size: 18pt; color: var(--muted); }
+  .overall-num.low { color: var(--danger); } .overall-num.mid { color: var(--warn); } .overall-num.ok { color: var(--ok); }
+  .overall-label { font-size: 8pt; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+  .overall-grade { font-family: "Fraunces", Georgia, serif; font-size: 15pt; font-weight: 600; margin: 1mm 0 1.5mm; }
+  .overall-note { font-size: 8.5pt; color: var(--muted); line-height: 1.45; }
   .scorecard { display: grid; grid-template-columns: 1fr 1fr; gap: 3mm; margin: 5mm 0 6mm; }
   .score { border: 1px solid var(--rule); border-radius: 4px; padding: 3.5mm 4mm; background: #fafbfb; }
   .score .label { font-size: 8pt; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-bottom: 1.5mm; }
@@ -157,6 +180,15 @@ export function toHtml(audit, brand = null) {
   const groups = [['technical', 'Technical'], ['onpage', 'On-page'], ['content', 'Content'], ['aeo', 'Answer engines'], ['geo', 'Generative engines'], ['offpage', 'Off-page and trust'], ['conversion', 'Conversion'], ['overview', 'Overview']];
   const checksBy = (g) => (a.checks || []).filter((c) => c.group === g);
   const { scores: measured, scoreBasis } = computeScores(a.checks || []);
+  // Один балл на весь отчёт стоит заголовком, шесть областей под ним расшифровкой. До 14.09.2026
+  // в письме и в PDF стояли числа из двух разных движков, и читатель делал единственный возможный
+  // вывод: цифры выдуманы. Веса печатаются рядом, чтобы балл можно было пересчитать руками.
+  const overall = computeOverall(a.checks || []);
+  const overallBlock = overall.score === null ? '' : `<div class="overall">
+    <div class="overall-num ${scoreClass(Math.round(overall.score / 10))}">${overall.score}<span>/100</span></div>
+    <div class="overall-side"><div class="overall-label">${esc(L.overallLabel)}</div>
+      <div class="overall-grade">${esc(L.grades[overall.grade] || overall.grade)}</div>
+      <div class="overall-note">${esc(L.overallNote(overall))}</div></div></div>`;
   const scoreCards = Object.entries(measured).map(([label, n]) => {
     const basis = scoreBasis[label] || {};
     const shown = (L.areas && L.areas[label]) || label;
@@ -177,7 +209,7 @@ export function toHtml(audit, brand = null) {
     <dl class="cover-meta"><div><dt>${L.auditSubject}</dt><dd>${t(a.client.name)}</dd></div><div><dt>${L.reportDate}</dt><dd>${esc(a.client.reportDate)}</dd></div><div><dt>${L.auditType}</dt><dd>${esc(a.meta.auditType)}</dd></div><div><dt>${L.preparedBy}</dt><dd>${esc(preparedBy)}</dd></div></dl></div>
     ${toolLine}</div></div>`);
   n++;
-  pages.push(`<div class="page">${header(a, L.secSummary, L)}<div class="eyebrow">${L.summaryEyebrow}</div><h2>${L.secSummary}</h2><p class="lead">${t(a.summary.lead)}</p><div class="scorecard">${scoreCards}</div><p class="scorecard-foot">${L.scorecardFoot}</p><div class="verdict"><p><strong>${L.keyTakeaway}</strong> ${t(a.summary.verdict)}</p></div><h3>${L.threePriorities}</h3>${olist(a.summary.priorities)}${footer(a, n++, preparedBy)}</div>`);
+  pages.push(`<div class="page">${header(a, L.secSummary, L)}<div class="eyebrow">${L.summaryEyebrow}</div><h2>${L.secSummary}</h2><p class="lead">${t(a.summary.lead)}</p>${overallBlock}<div class="scorecard">${scoreCards}</div><p class="scorecard-foot">${L.scorecardFoot}</p><div class="verdict"><p><strong>${L.keyTakeaway}</strong> ${t(a.summary.verdict)}</p></div><h3>${L.threePriorities}</h3>${olist(a.summary.priorities)}${footer(a, n++, preparedBy)}</div>`);
   pages.push(`<div class="page">${header(a, L.secOverview, L)}<div class="eyebrow">${L.overviewEyebrow}</div><h2>${L.whatSiteIs}</h2><table><tr><th>${L.parameter}</th><th>${L.value}</th></tr>${(a.overview.rows || []).map(([k, v]) => `<tr><td>${t(k)}</td><td>${t(v)}</td></tr>`).join('')}</table><p>${t(a.overview.note)}</p><h3>${L.pagesSampled}</h3><table><tr><th>${L.colUrl}</th><th>${L.colTitle}</th><th>${L.colWords}</th><th>H1</th><th>Alt</th></tr>${(a.sample || []).filter((p) => p.title !== undefined).slice(0, 14).map((p) => `<tr><td><code>${esc(new URL(p.url).pathname)}</code></td><td>${esc(p.title)}</td><td>${p.words}</td><td>${p.h1Count}</td><td>${p.images ? `${p.images - p.imagesNoAlt}/${p.images}` : '·'}</td></tr>`).join('')}</table>${footer(a, n++, preparedBy)}</div>`);
   const cardBody = (c) => [
     c.text ? `<p>${t(c.text)}</p>` : '',
