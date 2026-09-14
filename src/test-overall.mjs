@@ -5,7 +5,8 @@
  *  44 из 60, то есть 73 процента. Два разных движка в одном документе читаются как выдуманные
  *  цифры. Эти тесты держат единственный источник балла и запрет считать неизмеренное нулём. */
 import { readFileSync } from 'node:fs';
-import { computeOverall, computeScores, verifyScores, SCORE_AREAS } from './collect.mjs';
+import { createServer } from 'node:http';
+import { collect, computeOverall, computeScores, verifyScores, SCORE_AREAS } from './collect.mjs';
 import { toHtml } from './render.mjs';
 
 let bad = 0;
@@ -84,6 +85,26 @@ is('все спорные: половина', computeOverall(every('warn')).scor
   const { scores } = computeScores(audit.checks || []);
   const html = toHtml(audit, null);
   ok('разбивка по областям осталась под общим баллом', Object.keys(scores).every((k) => html.includes('/10') || scores[k] === null));
+}
+
+// Сохранённые оценки обязаны сходиться с итоговым набором проверок того же объекта.
+//
+// 14.09.2026 письмо сказало 61, а PDF напечатал 59: поле снималось до браузерного этапа, а он
+// дописывает проверки. Отчёт считал заново и получал другое число. Тест поднимает маленький сайт
+// и сверяет то, что collect положил в объект, с тем, что даёт функция по его же checks.
+{
+  const server = createServer((req, res) => {
+    if (req.url === '/robots.txt') return res.end('User-agent: *\nAllow: /\nSitemap: http://127.0.0.1:' + server.address().port + '/sitemap.xml');
+    if (req.url === '/sitemap.xml') { res.setHeader('content-type', 'application/xml'); return res.end(`<?xml version="1.0"?><urlset><url><loc>http://127.0.0.1:${server.address().port}/</loc></url></urlset>`); }
+    res.setHeader('content-type', 'text/html');
+    res.end('<!doctype html><html><head><title>A small test page for the audit collector</title><meta name="description" content="A page that exists only so the collector has something real to read during the test run of the suite."></head><body><h1>Test page</h1><p>Ten pounds a month, measured on our own invoices in 2026.</p><h2>One</h2><p>Text.</p><h2>Two</h2><p>Text.</p><h2>Three</h2><p>Text.</p><a href="mailto:a@b.c">write</a></body></html>');
+  });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  const audit = await collect(`http://127.0.0.1:${server.address().port}/`, { pages: 2, log: () => {} });
+  server.close();
+  is('сохранённый общий балл равен пересчитанному по тем же проверкам', audit.overall.score, computeOverall(audit.checks).score);
+  is('сохранённые оценки областей тоже сходятся', audit.scores, computeScores(audit.checks).scores);
+  is('и собственная проверка отчёта молчит', verifyScores(audit).filter((p) => p.startsWith('overall')), []);
 }
 
 if (bad) { console.error(`\n${bad} тест(ов) упало`); process.exit(1); }

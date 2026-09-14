@@ -448,11 +448,6 @@ export async function collect(startUrl, { pages = 20, log = () => {}, backlinks 
   const msg = pagesForTrust.filter((p) => p.messengerLinks > 0);
   checks.push(row('conv-messenger', 'conversion', 'A messenger link', msg.length ? 'ok' : 'warn', msg.length ? `on ${msg.length} of ${pagesForTrust.length} sampled page(s)` : 'none on the sampled pages', msg.length ? '' : 'for an international audience reading on a phone, one messenger link is usually worth more than a form'));
 
-  const { scores, scoreBasis } = computeScores(checks);
-
-  // Один балл на весь отчёт: его же берут страница проверки и письмо, чтобы цифры не спорили.
-
-  const overall = computeOverall(checks);
   // Оценки считаются до перевода: язык на цифры не влияет.
   // Сколько текста не видно без выполнения скриптов. Меряется настоящим браузером и только по
   // просьбе: запуск браузера это десятки секунд на страницу, и еженедельному мониторингу это ни к
@@ -472,6 +467,12 @@ export async function collect(startUrl, { pages = 20, log = () => {}, backlinks 
     }
     checks.push(jsBlindnessCheck(measured, lang));
   }
+
+  // Балл считается ПОСЛЕ всех этапов, включая браузерный: раньше он снимался до него, и на прогоне
+  // с `rendered: true` сохранённое поле расходилось с тем, что печатает отчёт. Письмо говорило 61,
+  // PDF печатал 59. Одна функция, один набор проверок, один момент: вот этот.
+  const { scores, scoreBasis } = computeScores(checks);
+  const overall = computeOverall(checks);
 
   const localised = localiseChecks(checks, lang);
   const critical = checks.filter((c) => c.status === 'bad').map((c) => ({ title: c.label, text: `${c.value}${c.comment ? `. ${c.comment}` : ''}`, level: 'bad' }));
