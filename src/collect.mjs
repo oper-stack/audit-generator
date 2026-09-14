@@ -212,7 +212,7 @@ export async function collect(startUrl, { pages = 20, log = () => {}, backlinks 
   const disallows = blocks.flatMap((b) => b.rules.filter((r) => r.key === 'disallow' && r.value).map((r) => r.value));
   const starBlocksAll = blocks.some((b) => b.agents.includes('*') && b.rules.some((r) => r.key === 'disallow' && r.value === '/'));
   const blockedAgents = blocks.filter((b) => !b.agents.includes('*') && b.rules.some((r) => r.key === 'disallow' && r.value === '/')).flatMap((b) => b.agents);
-  checks.push(row('robots', 'technical', 'robots.txt', robots.ok ? (sitemapUrls.length ? 'ok' : 'warn') : 'bad', robots.ok ? `${disallows.length} disallow rule(s) in ${blocks.length} agent block(s), ${sitemapUrls.length} sitemap line(s)` : `HTTP ${robots.status}`, robots.ok && !sitemapUrls.length ? 'no Sitemap: line' : ''));
+  checks.push(row('robots', 'technical', 'robots.txt', robots.ok ? (sitemapUrls.length ? 'ok' : 'warn') : 'bad', robots.ok ? `${disallows.length} disallow rule(s) in ${blocks.length} agent block(s), ${sitemapUrls.length ? `${sitemapUrls.length} sitemap line(s)` : 'no sitemap line'}` : `HTTP ${robots.status}`, robots.ok && !sitemapUrls.length ? 'no Sitemap: line' : ''));
   if (starBlocksAll) checks.push(row('robots-block', 'technical', 'robots.txt blocks the whole site', 'bad', 'Disallow: / under User-agent: *', 'search engines are told not to crawl anything'));
   // The two kinds of AI agent are not the same decision. A search fetcher is the one that can cite the
   // site in an answer, so blocking it costs visibility and is scored. A training crawler is a policy
@@ -317,9 +317,12 @@ export async function collect(startUrl, { pages = 20, log = () => {}, backlinks 
   const hp = homePage || good[0];
 
   if (hp) {
-    checks.push(row('title', 'onpage', 'Homepage title', hp.titleLength >= 40 && hp.titleLength <= 60 ? 'ok' : hp.titleLength ? 'warn' : 'bad', `"${hp.title}" (${hp.titleLength} chars)`, hp.titleLength < 40 ? 'short: the words that earn the click are missing' : hp.titleLength > 60 ? 'cut in results' : ''));
-    checks.push(row('description', 'onpage', 'Homepage meta description', hp.descriptionGarbage ? 'bad' : hp.descriptionLength >= 70 && hp.descriptionLength <= 160 ? 'ok' : hp.descriptionLength ? 'warn' : 'bad', hp.descriptionGarbage ? 'contains a shortcode or encoded data' : `${hp.descriptionLength} chars`, hp.descriptionGarbage ? 'renders as technical garbage in the snippet' : !hp.descriptionLength ? 'missing' : ''));
-    checks.push(row('h1', 'onpage', 'H1 on homepage', hp.h1Count === 1 ? 'ok' : hp.h1Count === 0 ? 'bad' : 'warn', `${hp.h1Count} H1 tag(s)`, hp.h1Count > 1 ? 'more than one H1 dilutes the page topic' : hp.h1Count === 0 ? 'no H1' : ''));
+    // Ноль в этих трёх строках означает «элемента нет», а не «маленькое значение». Строка
+    // «Сейчас: 0 знаков» в задании для исполнителя читается как обрывок: человеку непонятно,
+    // что описания у страницы просто не существует. Где ноль это отсутствие, пишем словами.
+    checks.push(row('title', 'onpage', 'Homepage title', hp.titleLength >= 40 && hp.titleLength <= 60 ? 'ok' : hp.titleLength ? 'warn' : 'bad', hp.titleLength ? `"${hp.title}" (${hp.titleLength} chars)` : 'no title on the page', hp.titleLength < 40 ? 'short: the words that earn the click are missing' : hp.titleLength > 60 ? 'cut in results' : ''));
+    checks.push(row('description', 'onpage', 'Homepage meta description', hp.descriptionGarbage ? 'bad' : hp.descriptionLength >= 70 && hp.descriptionLength <= 160 ? 'ok' : hp.descriptionLength ? 'warn' : 'bad', hp.descriptionGarbage ? 'contains a shortcode or encoded data' : hp.descriptionLength ? `${hp.descriptionLength} chars` : 'no meta description on the page', hp.descriptionGarbage ? 'renders as technical garbage in the snippet' : !hp.descriptionLength ? 'missing' : ''));
+    checks.push(row('h1', 'onpage', 'H1 on homepage', hp.h1Count === 1 ? 'ok' : hp.h1Count === 0 ? 'bad' : 'warn', hp.h1Count ? `${hp.h1Count} H1 tag(s)` : 'no H1 on the page', hp.h1Count > 1 ? 'more than one H1 dilutes the page topic' : hp.h1Count === 0 ? 'no H1' : ''));
     checks.push(row('canonical', 'technical', 'Canonical tag', hp.canonical ? 'ok' : 'warn', hp.canonical || 'missing'));
     checks.push(row('viewport', 'technical', 'Mobile viewport', !hp.viewport ? 'bad' : /user-scalable\s*=\s*no|maximum-scale\s*=\s*1(\.0)?\b/i.test(hp.viewport) ? 'warn' : 'ok', hp.viewport || 'missing', /user-scalable\s*=\s*no/i.test(hp.viewport) ? 'blocks zoom: bad for accessibility and mobile SEO' : ''));
     checks.push(row('og', 'technical', 'Open Graph and Twitter cards', hp.og.title && hp.og.image ? (hp.twitter ? 'ok' : 'warn') : 'warn', [hp.og.title ? 'og:title' : '', hp.og.image ? 'og:image' : '', hp.twitter ? `twitter:${hp.twitter}` : ''].filter(Boolean).join(', ') || 'none'));

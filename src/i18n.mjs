@@ -53,7 +53,7 @@ const RU = {
   ttfb: { label: 'Время до первого байта', value: (v) => `${nums(v)[0]} мс`, comment: () => 'один запрос от проверяющего, а не лабораторный тест' },
   robots: {
     label: 'robots.txt',
-    value: (v) => { const n = nums(v); return /HTTP/.test(v) ? `не отдаётся, код ${n[0]}` : `${plural(Number(n[0]), 'запрещающее правило', 'запрещающих правила', 'запрещающих правил')} в ${plural(Number(n[1]), 'блоке', 'блоках', 'блоках')} агентов, ${plural(Number(n[2]), 'строка', 'строки', 'строк')} с картой сайта`; },
+    value: (v) => { const n = nums(v); if (/HTTP/.test(v)) return `не отдаётся, код ${n[0]}`; const map = /no sitemap line/i.test(v) ? 'строки с картой сайта нет' : `${plural(Number(n[2]), 'строка', 'строки', 'строк')} с картой сайта`; return `${plural(Number(n[0]), 'запрещающее правило', 'запрещающих правила', 'запрещающих правил')} в ${plural(Number(n[1]), 'блоке', 'блоках', 'блоках')} агентов, ${map}`; },
     comment: (c) => (/no Sitemap/.test(c) ? 'нет строки Sitemap' : ''),
   },
   'robots-block': { label: 'robots.txt закрывает весь сайт', value: () => 'Disallow: / под User-agent: *', comment: () => 'поисковым системам сказано не обходить ничего' },
@@ -80,9 +80,11 @@ const RU = {
         : `${plural(Number(nums(v)[0]), 'ссылка', 'ссылки', 'ссылок')}, ${nums(v)[1]} на другие хосты`),
     comment: (c) => (/nothing to read/.test(c) ? 'ответным системам нечего читать, генерация индекса это работа на день' : c ? 'система ИИ может принять сайт за чужой' : ''),
   },
-  title: { label: 'Заголовок главной', value: (v) => { const n = nums(v); return `${plural(Number(n[n.length - 1]), 'знак', 'знака', 'знаков')}${Number(n[n.length - 1]) > 60 ? ', в выдаче обрежется' : ', укладывается в выдачу'}`; }, comment: (c) => (/^short/.test(c) ? 'коротко: в заголовке нет слов, ради которых по нему кликают' : /cut in results/.test(c) ? 'в выдаче обрежется' : '') },
-  description: { label: 'Описание главной', value: (v) => (/missing|none/i.test(v) ? 'нет' : /shortcode|garbage/i.test(v) ? 'содержит служебный код вместо текста' : `${plural(Number(nums(v)[0]), 'знак', 'знака', 'знаков')}`), comment: (c) => (/technical garbage/.test(c) ? 'в сниппете покажется технический мусор вместо текста' : /missing/.test(c) ? 'описания нет' : '') },
-  h1: { label: 'Заголовок H1 на главной', value: (v) => `${plural(Number(nums(v)[0] || 0), 'заголовок', 'заголовка', 'заголовков')} H1`, comment: (c) => (/dilutes/.test(c) ? 'больше одного H1 размывает тему страницы' : /no H1/.test(c) ? 'H1 на странице нет' : '') },
+  // Где ноль означает отсутствие элемента, по-русски это тоже пишется словами, а не цифрой:
+  // «0 знаков» в задании для исполнителя читается как обрывок.
+  title: { label: 'Заголовок главной', value: (v) => { if (/^no title/i.test(v)) return 'заголовка у страницы нет'; const n = nums(v); return `${plural(Number(n[n.length - 1]), 'знак', 'знака', 'знаков')}${Number(n[n.length - 1]) > 60 ? ', в выдаче обрежется' : ', укладывается в выдачу'}`; }, comment: (c) => (/^short/.test(c) ? 'коротко: в заголовке нет слов, ради которых по нему кликают' : /cut in results/.test(c) ? 'в выдаче обрежется' : '') },
+  description: { label: 'Описание главной', value: (v) => (/^no meta description/i.test(v) ? 'описания у страницы нет' : /missing|none/i.test(v) ? 'нет' : /shortcode|garbage/i.test(v) ? 'содержит служебный код вместо текста' : `${plural(Number(nums(v)[0]), 'знак', 'знака', 'знаков')}`), comment: (c) => (/technical garbage/.test(c) ? 'в сниппете покажется технический мусор вместо текста' : /missing/.test(c) ? 'описания нет' : '') },
+  h1: { label: 'Заголовок H1 на главной', value: (v) => (/^no H1/i.test(v) ? 'заголовка H1 на странице нет' : `${plural(Number(nums(v)[0] || 0), 'заголовок', 'заголовка', 'заголовков')} H1`), comment: (c) => (/dilutes/.test(c) ? 'больше одного H1 размывает тему страницы' : /no H1/.test(c) ? 'H1 на странице нет' : '') },
   canonical: { label: 'Канонический адрес', value: (v) => (/missing|none/i.test(v) ? 'не указан' : 'указан') },
   viewport: { label: 'Мобильный viewport', value: (v) => (/missing/.test(v) ? 'не задан' : v), comment: (c) => (c ? 'запрещает масштабирование: плохо для доступности и мобильного поиска' : '') },
   og: { label: 'Карточки для соцсетей', value: (v) => (/none/.test(v) ? 'нет' : v), comment: (c) => (/shortcode/.test(c) ? 'в описании служебный код вместо текста' : '') },

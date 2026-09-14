@@ -51,6 +51,26 @@ const empty = mechanical.filter(([id]) => {
 }).map(([id]) => id);
 is('у каждой чинимой проверки есть внятное задание', empty, []);
 
+// Ноль, который означает отсутствие, пишется словами, а не цифрой. 14.09.2026 в доставленном
+// письме стояло «Сейчас: 0 знаков», и человек не понимал, что описания у страницы просто нет.
+const zeros = [
+  ['description', 'no meta description on the page', /описания у страницы нет/],
+  ['title', 'no title on the page', /заголовка у страницы нет/],
+  ['h1', 'no H1 on the page', /заголовка H1 на странице нет/],
+  // У robots ноль правил это настоящее измерение, а не отсутствие: словами пишется только
+  // пропавшая строка Sitemap, поэтому в образце правил три.
+  ['robots', '3 disallow rule(s) in 2 agent block(s), no sitemap line', /строки с картой сайта нет/],
+];
+const nowLine = (text) => (text.split('\n').find((l) => l.startsWith('**Сейчас:**')) || '');
+for (const [id, value, expect] of zeros) {
+  const localised = renderAgentPrompts(audit([c(id, 'bad', id, value)], 'en'), { lang: 'ru' });
+  const now = nowLine(localised);
+  ok(`${id}: по-английски ноль не выводится цифрой`, !/(^|\s)0 (chars|H1|sitemap)/.test(value));
+  ok(`${id}: по-русски отсутствие названо словами`, expect.test(now));
+  // Проверяем именно строку «Сейчас»: в тексте задачи числа законны («в 120-160 знаков»).
+  ok(`${id}: в строке «Сейчас» нет обрывка с нулём`, !/(^|\s)0\s/.test(now));
+}
+
 // Шапка файла объясняет, как этим пользоваться
 const head = renderAgentPrompts(audit([c('robots', 'bad', 'robots', 'закрыт')]), { lang: 'ru' });
 // Проверяем смысл, а не точную формулировку: шапку переписывали под покупателя без терминала.
