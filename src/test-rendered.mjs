@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 /** Слепота к скриптам: считаем честно, не измерив, так и говорим. */
-import { compareReadings, jsBlindnessCheck } from './rendered.mjs';
+import { chmodSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { compareReadings, jsBlindnessCheck, isBrowserErrorPage, renderedDom } from './rendered.mjs';
 
 let bad = 0;
 const is = (n, a, b) => { const ok = JSON.stringify(a) === JSON.stringify(b); if (!ok) { bad++; console.error(`FAIL ${n}\n  ждали ${JSON.stringify(b)}\n  вышло ${JSON.stringify(a)}`); } else console.log(`ok   ${n}`); };
@@ -56,6 +59,58 @@ ok('и сказано почему', /нет браузера/.test(none.value))
 
 const en = jsBlindnessCheck([{ url: 'https://x.com/', raw: 10, rendered: 400, hiddenShare: 98, verdict: 'bad' }], 'en');
 ok('английская версия без кириллицы', !/[А-Яа-яЁё]/.test(JSON.stringify(en)));
+
+// ---- страница ошибки браузера это не сайт покупателя
+//
+// 14.09.2026 браузер не смог открыть сайт и напечатал свою страницу «не удалось подключиться»:
+// сто восемьдесят килобайт интерфейса Chrome. Приняв её за «как выглядит со скриптами», мы бы
+// написали покупателю в платном отчёте, что его сайт не читается без скриптов. Выдуманная
+// находка по чужому сайту это худшее, что может быть в отчёте за деньги.
+{
+  const errorPage = '<!DOCTYPE html><html dir="ltr" lang="ru"><head><style>/* Copyright 2017 The Chromium Authors */</style>'
+    + '<script>function neterror(){}</script></head><body><div id="main-frame-error"><span>Не удалось открыть страницу</span></div></body></html>';
+  ok('страница ошибки браузера распознана', isBrowserErrorPage(errorPage));
+  ok('настоящая страница не принята за ошибку', !isBrowserErrorPage(body(text(300))));
+  ok('пустой ответ не принят за ошибку', !isBrowserErrorPage(''));
+  // Одного совпадения мало: слово neterror может встретиться в статье про ошибки браузера.
+  ok('одного слова недостаточно', !isBrowserErrorPage('<html><body><p>Статья про neterror и как его читать</p></body></html>'));
+}
+
+// ---- браузер обязан отпускать, даже если сам не уходит
+//
+// Chrome печатает разметку и может не завершиться: его вспомогательные процессы держат канал
+// вывода открытым. Отчёт по habr.com из-за этого стоял сорок минут при нулевой загрузке.
+{
+  const dir = mkdtempSync(join(tmpdir(), 'operstack-fake-chrome-'));
+  const fake = (script) => {
+    const f = join(dir, `chrome-${Math.random().toString(36).slice(2)}.sh`);
+    writeFileSync(f, `#!/bin/sh\n${script}\n`);
+    chmodSync(f, 0o755);
+    return f;
+  };
+
+  // Напечатал страницу целиком и завис. Ждать его незачем: всё уже у нас.
+  const printsThenHangs = fake(`printf '%s' '<html><body><p>текст страницы</p></body></html>'\nsleep 60`);
+  const t0 = Date.now();
+  const dom = await renderedDom('https://example.com/', { chrome: printsThenHangs, timeoutMs: 10000 });
+  const took = Date.now() - t0;
+  ok('разметка получена, хотя браузер не вышел', typeof dom === 'string' && dom.includes('текст страницы'));
+  ok(`и получена сразу, а не по сроку (${(took / 1000).toFixed(1)} с)`, took < 5000);
+
+  // Ничего не печатает и не уходит. Здесь обязан сработать срок, и вернуться «не измеряли».
+  const silentHang = fake('sleep 60');
+  const t1 = Date.now();
+  const none = await renderedDom('https://example.com/', { chrome: silentHang, timeoutMs: 2500 });
+  const waited = Date.now() - t1;
+  is('молчащий браузер это «не измеряли», а не выдумка', none, null);
+  ok(`и ожидание кончилось в срок (${(waited / 1000).toFixed(1)} с)`, waited >= 2000 && waited < 9000);
+
+  // Напечатал свою страницу ошибки: не мерим.
+  const printsError = fake(`printf '%s' '<html><head><style>/* Copyright The Chromium Authors */</style></head><body><div id="main-frame-error">нет связи</div></body></html>'`);
+  is('страница ошибки не идёт в измерение', await renderedDom('https://example.com/', { chrome: printsError, timeoutMs: 8000 }), null);
+
+  rmSync(dir, { recursive: true, force: true });
+}
 
 if (bad) { console.error(`\n${bad} тест(ов) упало`); process.exit(1); }
 console.log('\nвсе тесты слепоты к скриптам прошли');

@@ -460,7 +460,7 @@ export async function collect(startUrl, { pages = 20, log = () => {}, backlinks 
     for (const t of targets) {
       if (!t.url) continue;
       log(`rendering ${t.url} in a real browser`);
-      const dom = renderedDom(t.url);
+      const dom = await renderedDom(t.url);
       if (!dom) { log('no browser here, the JavaScript check will say it was not measured'); break; }
       const rawHtml = t.raw || (await get(t.url)).text;
       if (!rawHtml) continue;

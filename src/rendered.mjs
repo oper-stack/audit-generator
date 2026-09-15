@@ -10,10 +10,30 @@
  * Браузер берётся тот же, которым печатается PDF отчёта: свой Chrome или Chromium. Если его нет,
  * проверка не выдумывает результат, а говорит, что не измеряла, и почему.
  */
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+
+/**
+ * Это страница сайта или собственная страница ошибки браузера.
+ *
+ * Простым языком: браузер не смог открыть сайт и вместо него напечатал свою страницу «не удалось
+ * подключиться». В ней сотни слов интерфейса самого браузера. Если принять её за «как сайт
+ * выглядит со скриптами», получится, что у покупателя почти весь текст появляется только в
+ * браузере, и мы напишем ему в отчёте, что его сайт не читается без скриптов. Это была бы
+ * выдуманная находка по чужому сайту, худший вид ошибки в платном отчёте.
+ *
+ * Поэтому такую страницу мы не меряем вовсе и честно говорим, что не мерили.
+ */
+export function isBrowserErrorPage(html) {
+  const s = String(html || '');
+  if (!s) return false;
+  // Своя страница ошибки Chrome собирается из этих кусков и ни на одном настоящем сайте их нет
+  // всех сразу: контейнер ошибки, скрипт neterror и копирайт Chromium в собственных стилях.
+  const marks = [/id="main-frame-error"/i, /neterror/i, /chrome-error:/i, /Chromium Authors/].filter((re) => re.test(s)).length;
+  return marks >= 2;
+}
 
 /** Тот же поиск браузера, что у печати PDF: одна привычка на весь пакет. */
 export function findChrome() {
@@ -34,17 +54,74 @@ export function findChrome() {
 /** Текст страницы после выполнения скриптов. null, если браузера нет или он не справился. */
 export function renderedDom(url, { chrome = null, timeoutMs = 45000, waitMs = 8000 } = {}) {
   const bin = chrome || findChrome();
-  if (!bin) return null;
+  if (!bin) return Promise.resolve(null);
   const profile = mkdtempSync(join(tmpdir(), 'operstack-render-'));
-  try {
-    const r = spawnSync(bin, [
+
+  /*
+   * Почему не spawnSync с таймаутом, хотя так было и так короче.
+   *
+   * 14.09.2026 отчёт по habr.com встал на этой стадии и не двигался сорок минут при нулевой
+   * загрузке процессора. Таймаут spawnSync отправляет сигнал только самому Chrome, а тот
+   * запускает десяток вспомогательных процессов, и они наследуют тот же канал вывода. Главный
+   * умирает, помощники живут, канал не закрывается, и ожидание чтения не кончается никогда.
+   * Таймаут при этом честно сработал: висел не Chrome, висело чтение его вывода.
+   *
+   * Поэтому запускаем своей группой процессов (`detached`) и по истечении срока убиваем всю
+   * группу разом, отрицательным номером. Помощники уходят вместе с главным, канал закрывается,
+   * и стадия заканчивается в срок при любом поведении чужого сайта.
+   */
+  /** Похоже ли прочитанное на целую страницу, а не на обрывок. */
+  const complete = (html) => /<\/html\s*>\s*$/i.test(String(html).trimEnd());
+
+  return new Promise((resolve) => {
+    let out = ''; let size = 0; let done = false;
+    const child = spawn(bin, [
       '--headless=new', '--disable-gpu', '--no-first-run', '--no-default-browser-check',
       '--disable-extensions', '--mute-audio', '--hide-scrollbars',
       `--user-data-dir=${profile}`, `--virtual-time-budget=${waitMs}`, '--dump-dom', url,
-    ], { encoding: 'utf8', timeout: timeoutMs, maxBuffer: 64 * 1024 * 1024 });
-    if (r.status !== 0 || !r.stdout) return null;
-    return r.stdout;
-  } catch { return null; } finally { rmSync(profile, { recursive: true, force: true }); }
+    ], { detached: true, stdio: ['ignore', 'pipe', 'ignore'] });
+
+    const finish = (value) => {
+      if (done) return;
+      done = true;
+      // Страница ошибки браузера это не сайт покупателя: меряли бы интерфейс Chrome.
+      if (value && isBrowserErrorPage(value)) value = null;
+      clearTimeout(timer);
+      stopGroup();
+      rmSync(profile, { recursive: true, force: true });
+      resolve(value);
+    };
+    const stopGroup = () => {
+      // Отрицательный номер это вся группа: сам Chrome и все его помощники.
+      try { process.kill(-child.pid, 'SIGKILL'); } catch { /* уже ушли */ }
+    };
+
+    // По сроку отдаём то, что успели прочитать: браузер мог допечатать страницу целиком и не
+    // суметь завершиться. Выбрасывать готовый DOM только потому, что Chrome не ушёл сам, значит
+    // сказать покупателю «не измеряли» там, где измерили.
+    const timer = setTimeout(() => finish(complete(out) ? out : null), timeoutMs);
+    child.stdout.on('data', (chunk) => {
+      size += chunk.length;
+      // Страница может оказаться огромной. Читаем до потолка и прекращаем: DOM на шестьдесят
+      // мегабайт всё равно не нужен, а память нужна.
+      if (size > 64 * 1024 * 1024) { finish(complete(out) ? out : null); return; }
+      out += chunk;
+      // Как только страница допечатана до закрывающего тега, ждать больше нечего: `--dump-dom`
+      // печатает разметку целиком и одним куском. Chrome после этого может не завершиться сам,
+      // и раньше каждая страница стоила полного срока ожидания вместо секунды.
+      if (complete(out)) finish(out);
+    });
+    child.on('error', () => finish(null));
+    /*
+     * Ждём именно `exit`, а не `close`.
+     *
+     * `close` ждёт, пока закроются все потоки, а канал вывода держат вспомогательные процессы
+     * Chrome, которые живут дольше главного. Из-за этого стадия не заканчивалась даже на
+     * example.com: DOM был давно прочитан, а событие не приходило. `exit` приходит, когда ушёл
+     * сам браузер, и этого достаточно: всё, что он собирался напечатать, уже у нас.
+     */
+    child.on('exit', (code) => finish(code === 0 && out ? out : (complete(out) ? out : null)));
+  });
 }
 
 const CHROME_STRIP = /<(nav|footer|aside|script|style|noscript|template)[\s\S]*?<\/\1>/gi;
