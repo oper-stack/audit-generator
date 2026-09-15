@@ -27,8 +27,9 @@ const is = (n, a, b) => ok(`${n} (ждали ${JSON.stringify(b)}, вышло ${
 const PAGE = `<!doctype html><html lang="ru"><head><title>Пример</title><meta name="description" content="Описание"></head>
 <body><main><h1>Пример сайта</h1>${'<p>Обычный абзац текста про товар и цену, без цифр, чтобы было что цитировать. </p>'.repeat(40)}</main></body></html>`;
 
-const serve = ({ robots, status = null }) => new Promise((resolve) => {
+const serve = ({ robots, status = null, llmsStatus = 404 }) => new Promise((resolve) => {
   const s = createServer((req, res) => {
+    if (req.url.startsWith('/llms.txt')) { res.writeHead(llmsStatus, { 'content-type': 'text/html' }); res.end('<html>нет</html>'); return; }
     if (req.url.startsWith('/robots.txt')) {
       if (status) { res.writeHead(status, { 'content-type': 'text/html' }); res.end('<html>нет</html>'); return; }
       if (robots === null) { res.writeHead(403, { 'content-type': 'text/html' }); res.end('<html>denied</html>'); return; }
@@ -126,6 +127,44 @@ if (!dnsOk) {
     const a4 = v4.areas.find((a) => a.id === 'access');
     is(`robots.txt ${code}: область не измерена`, a4.measured, false);
     ok(`robots.txt ${code}: код назван в тексте`, new RegExp(`код ${code}`).test(a4.findings[0].text));
+  }
+
+  // ---- llms.txt: та же граница между «нет файла» и «не дали файл»
+  //
+  // Сайт за защитой отдавал 403 на llms.txt, и мы писали владельцу «у вас нет карты для агентов»
+  // с нулём баллов. Файл мог быть, мы его просто не получили.
+  {
+    const cases = [[404, 'missing'], [410, 'missing'], [403, 'unknown'], [429, 'unknown'], [500, 'unknown']];
+    for (const [code, kind] of cases) {
+      const { s: s5, url: url5 } = await serve({ robots: 'User-agent: *\nDisallow: /admin/\n', llmsStatus: code });
+      let v5;
+      try { v5 = await checkVisibility(url5, { budgetMs: 8500, samplePages: 3, lang: 'ru' }); } finally { s5.close(); }
+      const a5 = v5.areas.find((a) => a.id === 'index');
+      if (kind === 'missing') {
+        is(`llms.txt ${code}: область измерена`, a5.measured, true);
+        is(`llms.txt ${code}: и это честный ноль`, a5.score, 0);
+        ok(`llms.txt ${code}: находка называет отсутствие`, a5.findings.some((f) => f.id === 'llms-missing'));
+      } else {
+        is(`llms.txt ${code}: область не измерена`, a5.measured, false);
+        is(`llms.txt ${code}: балла нет, а не ноль`, a5.score, null);
+        ok(`llms.txt ${code}: не пишем «у вас нет файла»`, !a5.findings.some((f) => f.id === 'llms-missing'));
+        ok(`llms.txt ${code}: сказано, что не отдали`, /не дал этой проверке прочитать llms\.txt/.test(a5.findings[0].text));
+        is(`llms.txt ${code}: знаменатель без этой области`, v5.score, Math.round((v5.areas.filter((a) => a.measured !== false).reduce((t, a) => t + a.score, 0) / v5.areas.filter((a) => a.measured !== false).reduce((t, a) => t + a.max, 0)) * 100));
+      }
+    }
+  }
+
+  // ---- две неизмеренные области сразу: знаменатель считается по оставшимся трём
+  {
+    const { s: s6, url: url6 } = await serve({ robots: null, llmsStatus: 403 });
+    let v6;
+    try { v6 = await checkVisibility(url6, { budgetMs: 8500, samplePages: 3, lang: 'ru' }); } finally { s6.close(); }
+    const un = v6.areas.filter((a) => a.measured === false);
+    is('неизмеренных областей две', un.length, 2);
+    const meas = v6.areas.filter((a) => a.measured !== false);
+    is('знаменатель 60', meas.reduce((t, a) => t + a.max, 0), 60);
+    is('балл по оставшимся', v6.score, Math.round((meas.reduce((t, a) => t + a.score, 0) / 60) * 100));
+    ok('ни одна из них не получила ноль', un.every((a) => a.score === null));
   }
 
 if (bad) { console.error(`\n${bad} тест(ов) упало`); process.exit(1); }
