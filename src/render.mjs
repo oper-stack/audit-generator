@@ -37,7 +37,12 @@ const LABELS = {
       const where = o.source === 'visibility:reused'
         ? `This is the same figure you already saw on the free check${o.measuredAt ? ` on ${String(o.measuredAt).slice(0, 10)}` : ''}. It is not measured again here, so the page, the email and this report always carry one number. `
         : 'Measured here by the same code and the same settings as the free check at oper-stack.com/ai-visibility. ';
-      return `${where}${read}The five areas below add up to it exactly, so you can recompute it by hand. Running the check again can move it by a point or two: a check that answers in time on one run may not on the next, and this score never counts against a site what it could not read.`;
+      const areas = Array.isArray(o.areas) ? o.areas : [];
+      const measured = areas.filter((a) => a.measured !== false && a.score !== null);
+      const sumUp = areas.length && measured.length < areas.length
+        ? `Of the five areas below, ${measured.length} could be measured; they add up to ${measured.reduce((t, a) => t + a.score, 0)} out of ${measured.reduce((t, a) => t + a.max, 0)}, and the score is that same share carried to 100. An area marked not measured is not counted for or against the site. `
+        : 'The five areas below add up to it exactly, so you can recompute it by hand. ';
+      return `${where}${read}${sumUp}Running the check again can move it by a point or two: a check that answers in time on one run may not on the next, and this score never counts against a site what it could not read.`;
     },
     secondMeasure: 'A second, separate measurement: how this report scores its own checks',
     secOverview: 'Site overview', overviewEyebrow: '02 · Overview', whatSiteIs: 'What the site is', parameter: 'Parameter', value: 'Value', pagesSampled: 'Pages sampled', colUrl: 'URL', colTitle: 'Title', colWords: 'Words',
@@ -72,7 +77,12 @@ const LABELS = {
       const where = o.source === 'visibility:reused'
         ? `Это ровно то число, которое вы уже видели в бесплатной проверке${o.measuredAt ? ` ${String(o.measuredAt).slice(0, 10)}` : ''}. Здесь оно не меряется заново, поэтому страница, письмо и этот отчёт всегда несут одно число. `
         : 'Измерено здесь тем же кодом и с теми же настройками, что у бесплатной проверки на oper-stack.com/ai-visibility. ';
-      return `${where}${read}Пять областей ниже дают в сумме ровно этот балл, его можно сложить руками. Повторная проверка может дать на пункт-другой иначе: проверка, которая успела ответить в один прогон, может не успеть в следующий, а балл никогда не засчитывает сайту в минус то, что не удалось прочитать.`;
+      const areas = Array.isArray(o.areas) ? o.areas : [];
+      const measured = areas.filter((a) => a.measured !== false && a.score !== null);
+      const sumUp = areas.length && measured.length < areas.length
+        ? `Из пяти областей ниже измерены ${measured.length}, они дают ${measured.reduce((t, a) => t + a.score, 0)} из ${measured.reduce((t, a) => t + a.max, 0)}, и балл это та же доля, перенесённая на сто. Область с пометкой «не измерялось» не зачтена ни в плюс, ни в минус. `
+        : 'Пять областей ниже дают в сумме ровно этот балл, его можно сложить руками. ';
+      return `${where}${read}${sumUp}Повторная проверка может дать на пункт-другой иначе: проверка, которая успела ответить в один прогон, может не успеть в следующий, а балл никогда не засчитывает сайту в минус то, что не удалось прочитать.`;
     },
     secondMeasure: 'Второе, отдельное измерение: как этот отчёт оценивает собственные проверки',
     secOverview: 'О сайте', overviewEyebrow: '02 · Обзор', whatSiteIs: 'Что это за сайт', parameter: 'Параметр', value: 'Значение', pagesSampled: 'Проверенные страницы', colUrl: 'Адрес', colTitle: 'Заголовок', colWords: 'Слов',
@@ -128,8 +138,11 @@ export function overallSummary(overall, { lang = 'en' } = {}) {
     grade: (L.grades && L.grades[overall.grade]) || overall.grade,
     note: L.overallNote(overall),
     areas: (Array.isArray(overall.areas) ? overall.areas : []).map((x) => ({
-      id: x.id, label: (x.id && names[x.id]) || x.label, score: x.score, max: x.max,
+      id: x.id, label: (x.id && names[x.id]) || x.label,
+      // Неизмеренная область несёт null, а не ноль: ноль это утверждение, что там плохо.
+      score: x.measured === false ? null : x.score, max: x.max, measured: x.measured !== false,
     })),
+    notMeasured: L.notMeasured,
     secondMeasure: L.secondMeasure,
     secondMeasureFoot: L.scorecardFoot.replace(/<\/?strong>/g, ''),
   };
@@ -250,7 +263,7 @@ export function toHtml(audit, brand = null) {
     <div class="overall-side"><div class="overall-label">${esc(head.label)}</div>
       <div class="overall-grade">${esc(head.grade)}</div>
       <div class="overall-note">${esc(head.note)}</div></div></div>`
-    + (head.areas.length ? `<table class="areas"><tr>${head.areas.map((x) => `<th>${esc(x.label)}</th>`).join('')}</tr><tr>${head.areas.map((x) => `<td>${x.score}<span>/${x.max}</span></td>`).join('')}</tr></table>` : '');
+    + (head.areas.length ? `<table class="areas"><tr>${head.areas.map((x) => `<th>${esc(x.label)}</th>`).join('')}</tr><tr>${head.areas.map((x) => `<td>${x.score === null ? `<span>${esc(head.notMeasured)}</span>` : `${x.score}<span>/${x.max}</span>`}</td>`).join('')}</tr></table>` : '');
   const scoreCards = Object.entries(measured).map(([label, n]) => {
     const basis = scoreBasis[label] || {};
     const shown = (L.areas && L.areas[label]) || label;
