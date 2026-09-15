@@ -62,6 +62,7 @@ export const MESSAGES = {
     area: { access: 'Can AI crawlers read it', index: 'Is there a map for agents (llms.txt)', entity: 'Is the entity clear (schema)', content: 'Is there something to quote', trust: 'Can it be dated and trusted' },
     llmsUnreadable: (status) => `The site did not let this check read llms.txt${status ? ` (HTTP ${status})` : ''}, so whether the site has a map for agents could not be measured. It is not counted for or against the site: a file we were refused is not the same as a file that is not there.`,
     robotsMissing: 'There is no robots.txt on the site. By the standard that means nothing is disallowed, so every AI crawler may read it. A file is not required; add one only when something needs closing off.',
+    sampleShort: (read, wanted) => `Only ${read} of ${wanted} pages answered in time, twice in a row, so there was not enough of the site to score. We do not show a number here: a score that goes up because we read less is a score nobody can defend. The site may simply be slow right now; run the check again in a minute.`,
     robotsUnreadable: (status) => `The site did not let this check read robots.txt${status ? ` (HTTP ${status})` : ''}, so whether AI crawlers are allowed could not be measured. It is not counted for or against the site: an unread file is not good news. The owner can open it in a browser, or ask whoever runs the site's protection.`,
     robotsAllBlocked: 'robots.txt disallows the whole site for every crawler. Nothing can read it.',
     fetchersBlocked: (list) => `Blocked answer-engine fetchers: ${list}. These are the bots that cite pages live.`,
@@ -111,6 +112,7 @@ export const MESSAGES = {
     area: { access: 'Могут ли роботы ИИ прочитать сайт', index: 'Есть ли карта для агентов (llms.txt)', entity: 'Понятно ли, кто вы (разметка)', content: 'Есть ли что процитировать', trust: 'Можно ли датировать и доверять' },
     llmsUnreadable: (status) => `Сайт не дал этой проверке прочитать llms.txt${status ? ` (код ${status})` : ''}, поэтому есть ли у сайта карта для агентов, измерить не вышло. В плюс или в минус это не зачтено: файл, который нам не отдали, это не то же самое, что файла нет.`,
     robotsMissing: 'Файла robots.txt на сайте нет. По стандарту это значит, что не запрещено ничего, то есть читать сайт может любой робот ИИ. Заводить файл необязательно: он нужен, только когда есть что закрывать.',
+    sampleShort: (read, wanted) => `Из ${wanted} страниц ответили ${read}, и со второй попытки тоже, поэтому считать балл не по чему. Числа здесь не будет: балл, который растёт оттого, что мы прочитали меньше, защитить нельзя. Возможно, сайт сейчас просто медленный: запустите проверку через минуту.`,
     robotsUnreadable: (status) => `Сайт не дал этой проверке прочитать robots.txt${status ? ` (код ${status})` : ''}, поэтому допущены роботы ИИ или нет, измерить не вышло. В плюс или в минус сайту это не зачтено: непрочитанный файл это не хорошая новость. Владелец может открыть его в браузере сам или спросить у тех, кто настраивал защиту сайта.`,
     robotsAllBlocked: 'robots.txt закрывает весь сайт для всех роботов. Его никто не может прочитать.',
     fetchersBlocked: (list) => `Закрыты поисковые роботы ответных систем: ${list}. Именно они достают страницу, чтобы процитировать её в ответе.`,
@@ -376,7 +378,8 @@ export async function checkVisibility(input, { budgetMs = 8500, lang = 'en', sam
   const agentLabel = (a) => (lang === 'ru' ? a.labelRu : a.label);
   const started = Date.now();
   const deadline = started + budgetMs;
-  const left = () => deadline - Date.now();
+  let grace = 0;
+  const left = () => deadline + grace - Date.now();
   const url = normaliseInput(input);
   if (!url) return { ok: false, error: T.badInput };
   const origin = new URL(url).origin; const host = new URL(url).host;
@@ -417,11 +420,39 @@ export async function checkVisibility(input, { budgetMs = 8500, lang = 'en', sam
   const robots = parseRobots(robotsRes.ok ? robotsRes.text : '');
   const sitemap = left() > 1500 ? await readSitemap(origin, robotsRes.ok ? robotsRes.text : '', () => Math.min(3000, left() - 300)) : { found: false, url: '', count: 0, lastmod: false, pages: [], skipped: true };
   let sampled = [];
+  /*
+   * Сколько страниц выборки мы собирались прочитать. Нужно, чтобы отличить «сайт маленький» от
+   * «страницы не успели ответить»: в первом случае меряем по тому, что есть, во втором мерить
+   * нечем. Найдено 15.09.2026: habr.com в шести прогонах подряд дал 46, 54, 59 и 69, и выше
+   * он выходил там, где успела прочитаться одна страница вместо двух. То есть прочитать меньше
+   * выглядело как «стало лучше», а это ровно то, чего продукт обещает не делать.
+   */
+  let wantedPages = 0;
   if (left() > 2000 && sitemap.pages.length) {
     const norm = (u) => u.replace(/\/$/, '').toLowerCase();
     const picks = sitemap.pages.filter((p) => norm(p) !== norm(home.url) && p.startsWith(origin)).sort((a, b) => b.length - a.length).slice(0, Math.max(12, samplePages * 4)).filter((_, i) => i % 4 === 0).slice(0, samplePages);
-    const rs = await Promise.all(picks.map((p) => get(p, { timeout: Math.min(4000, left() - 300) })));
+    const read = async (list) => Promise.all(list.map((p) => get(p, { timeout: Math.min(4000, left() - 300) })));
+    let rs = await read(picks);
+    // Одна повторная попытка по тем, что не ответили: страницы маленькие, а разница в балле
+    // между «прочитали две» и «прочитали одну» доходила до двадцати пунктов.
+    const failed = picks.filter((p, i) => !(rs[i].ok && /html/i.test(rs[i].type)));
+    if (failed.length) {
+      // Повтору даётся своё время сверх общего бюджета, один раз и не больше трёх секунд.
+      // Без этого на медленном сайте повтор упирался в тот же истёкший бюджет и проверка
+      // отказывалась считать балл там, где сайт просто отвечает за пять секунд, а не за две.
+      grace = 5000;
+      let again = await Promise.all(failed.map((p) => get(p, { timeout: Math.min(3500, left() - 200) })));
+      rs = rs.concat(again);
+      // Вторая и последняя попытка по тем, что снова молчат: три обращения к странице это
+      // предел, дальше мы уже не меряем сайт, а ждём его.
+      const stillFailed = failed.filter((p, i) => !(again[i].ok && /html/i.test(again[i].type)));
+      if (stillFailed.length && left() > 1200) rs = rs.concat(await Promise.all(stillFailed.map((p) => get(p, { timeout: Math.min(2500, left() - 200) }))));
+    }
     sampled = rs.filter((r) => r.ok && /html/i.test(r.type)).map((r) => analysePage(r.text, r.url));
+    // Дубли по адресу: повтор мог вернуть ту же страницу, что и первая попытка.
+    const seenUrl = new Set();
+    sampled = sampled.filter((p) => (seenUrl.has(p.url) ? false : seenUrl.add(p.url)));
+    wantedPages = Math.min(picks.length, samplePages);
   }
   const pages = [homePage, ...sampled];
 
@@ -571,12 +602,27 @@ export async function checkVisibility(input, { budgetMs = 8500, lang = 'en', sam
     trustFindings.push({ level: 'fail', text: T.sitemapMissing });
   }
 
+  /*
+   * Выборка так и не прочитана даже со второй попытки. Балла не будет.
+   *
+   * Почему не «посчитаем по тому, что успели»: 15.09.2026 один и тот же сайт в шести прогонах
+   * дал 46, 54, 59 и 69, и выше он выходил там, где прочиталась одна страница вместо двух.
+   * Главная у большинства сайтов лучше внутренних, поэтому меньше чтения выглядело как лучший
+   * сайт. Число, которое растёт от того, что мы прочитали меньше, защитить нельзя, поэтому его
+   * не показываем вовсе: тот же путь, что у сайта, который нам не ответил.
+   */
+  if (wantedPages > 0 && sampled.length < wantedPages) {
+    return { ok: false, blocked: false, challenged: false, status: home.status, error: T.sampleShort(sampled.length + 1, wantedPages + 1), botsBlocked: [] };
+  }
+  const sampleOk = true;
+  const sampleNote = null;
+
   const areas = [
     { id: 'access', label: T.area.access, score: robotsRead ? access : null, max: 25, measured: robotsRead, findings: accessFindings },
     { id: 'index', label: T.area.index, score: llmsRead ? index : null, max: 15, measured: llmsRead, findings: indexFindings },
     { id: 'entity', label: T.area.entity, score: entity, max: 20, findings: entityFindings },
-    { id: 'content', label: T.area.content, score: content, max: 25, findings: contentFindings },
-    { id: 'trust', label: T.area.trust, score: trust, max: 15, findings: trustFindings },
+    { id: 'content', label: T.area.content, score: sampleOk ? content : null, max: 25, measured: sampleOk, findings: sampleOk ? contentFindings : [sampleNote] },
+    { id: 'trust', label: T.area.trust, score: sampleOk ? trust : null, max: 15, measured: sampleOk, findings: sampleOk ? trustFindings : [sampleNote] },
   ];
   /*
    * Балл считается по измеренному и переносится на сто.
