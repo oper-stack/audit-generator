@@ -58,6 +58,7 @@ export const MESSAGES = {
     rulesUnknown: ' Its robots.txt could not be read either, so there is nothing to say about AI crawlers: that is not counted for or against the site.',
     howToCheckBots: ' To know for certain, open the server log and look for GPTBot, ClaudeBot and PerplexityBot, or ask whoever runs the protection which bots are on the allowlist.',
     area: { access: 'Can AI crawlers read it', index: 'Is there a map for agents (llms.txt)', entity: 'Is the entity clear (schema)', content: 'Is there something to quote', trust: 'Can it be dated and trusted' },
+    llmsUnreadable: (status) => `The site did not let this check read llms.txt${status ? ` (HTTP ${status})` : ''}, so whether the site has a map for agents could not be measured. It is not counted for or against the site: a file we were refused is not the same as a file that is not there.`,
     robotsMissing: 'There is no robots.txt on the site. By the standard that means nothing is disallowed, so every AI crawler may read it. A file is not required; add one only when something needs closing off.',
     robotsUnreadable: (status) => `The site did not let this check read robots.txt${status ? ` (HTTP ${status})` : ''}, so whether AI crawlers are allowed could not be measured. It is not counted for or against the site: an unread file is not good news. The owner can open it in a browser, or ask whoever runs the site's protection.`,
     robotsAllBlocked: 'robots.txt disallows the whole site for every crawler. Nothing can read it.',
@@ -105,6 +106,7 @@ export const MESSAGES = {
     rulesUnknown: ' Файл robots.txt прочитать тоже не вышло, поэтому про роботов ИИ сказать нечего, и в плюс или в минус сайту это не зачтено.',
     howToCheckBots: ' Чтобы знать точно, посмотрите в журнале сервера, приходят ли GPTBot, ClaudeBot и PerplexityBot, либо спросите у тех, кто настраивал защиту, кто у неё в белом списке.',
     area: { access: 'Могут ли роботы ИИ прочитать сайт', index: 'Есть ли карта для агентов (llms.txt)', entity: 'Понятно ли, кто вы (разметка)', content: 'Есть ли что процитировать', trust: 'Можно ли датировать и доверять' },
+    llmsUnreadable: (status) => `Сайт не дал этой проверке прочитать llms.txt${status ? ` (код ${status})` : ''}, поэтому есть ли у сайта карта для агентов, измерить не вышло. В плюс или в минус это не зачтено: файл, который нам не отдали, это не то же самое, что файла нет.`,
     robotsMissing: 'Файла robots.txt на сайте нет. По стандарту это значит, что не запрещено ничего, то есть читать сайт может любой робот ИИ. Заводить файл необязательно: он нужен, только когда есть что закрывать.',
     robotsUnreadable: (status) => `Сайт не дал этой проверке прочитать robots.txt${status ? ` (код ${status})` : ''}, поэтому допущены роботы ИИ или нет, измерить не вышло. В плюс или в минус сайту это не зачтено: непрочитанный файл это не хорошая новость. Владелец может открыть его в браузере сам или спросить у тех, кто настраивал защиту сайта.`,
     robotsAllBlocked: 'robots.txt закрывает весь сайт для всех роботов. Его никто не может прочитать.',
@@ -467,8 +469,18 @@ export async function checkVisibility(input, { budgetMs = 8500, lang = 'en', sam
   if (!accessFindings.length) accessFindings.push({ level: 'pass', text: T.allAllowed(AI_AGENTS.length, robots.signal) });
 
   // Area 2: agent index (15)
+  /*
+   * Та же граница, что у robots.txt: «файла нет» и «нам его не дали» это разные вещи.
+   *
+   * До 15.09.2026 любой неуспех давал вывод «у вас нет llms.txt» и ноль баллов. На сайте за
+   * защитой это выдуманная находка: файл может быть, мы его просто не получили. 404 и 410
+   * означают, что файла действительно нет, и вот это честная находка с нулём.
+   */
+  const llmsMissing = llmsRes.status === 404 || llmsRes.status === 410;
+  const llmsRead = llmsRes.ok || llmsMissing;
   let index = 0; const indexFindings = [];
-  if (!llmsRes.ok) indexFindings.push({ id: 'llms-missing', level: 'fail', text: T.llmsMissing });
+  if (!llmsRead) indexFindings.push({ id: 'llms-unreadable', level: 'na', text: T.llmsUnreadable(llmsRes.status || 0) });
+  else if (!llmsRes.ok) indexFindings.push({ id: 'llms-missing', level: 'fail', text: T.llmsMissing });
   else if (!llmsIsText) { index = 3; indexFindings.push({ id: 'llms-not-text', level: 'fail', text: T.llmsNotText }); }
   else if (llmsLinks.length && llmsForeign.length > llmsLinks.length / 2) { index = 5; indexFindings.push({ id: 'llms-foreign', level: 'fail', text: T.llmsForeign([...new Set(llmsForeign.map((l) => new URL(l).host))].slice(0, 3).join(', ')) }); }
   else { index = llmsLinks.length >= 5 ? 15 : 10; indexFindings.push({ level: 'pass', text: T.llmsOk(llmsLinks.length) }); }
@@ -557,7 +569,7 @@ export async function checkVisibility(input, { budgetMs = 8500, lang = 'en', sam
 
   const areas = [
     { id: 'access', label: T.area.access, score: robotsRead ? access : null, max: 25, measured: robotsRead, findings: accessFindings },
-    { id: 'index', label: T.area.index, score: index, max: 15, findings: indexFindings },
+    { id: 'index', label: T.area.index, score: llmsRead ? index : null, max: 15, measured: llmsRead, findings: indexFindings },
     { id: 'entity', label: T.area.entity, score: entity, max: 20, findings: entityFindings },
     { id: 'content', label: T.area.content, score: content, max: 25, findings: contentFindings },
     { id: 'trust', label: T.area.trust, score: trust, max: 15, findings: trustFindings },
