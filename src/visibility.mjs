@@ -48,7 +48,9 @@ export const MESSAGES = {
   en: {
     badInput: 'Enter a public site address, for example example.com',
     tooSlow: 'The site took too long to answer',
-    badAnswer: (status, url) => `The site answered ${status || 'nothing'} for ${url}`,
+    badAnswer: (status, url) => `The site answered ${status} for ${url}`,
+    // Чаще всего это опечатка в адресе, и сказать об этом надо первым делом, а не после разбора.
+    unreachable: (url) => `Nothing answered at ${url}. Most often that is a typo in the address: check the spelling, and if the site really is there, it may be down right now.`,
     botWall: (status) => `The site refuses unknown clients (HTTP ${status}), so this check could not read a single page.`,
     botChallenge: (status) => `The site sits behind a browser challenge (Cloudflare, HTTP ${status}), so this check could not read a single page.`,
     // Что мы знаем про роботов ИИ, когда нас самих развернули: ровно то, что написано в правилах
@@ -98,7 +100,8 @@ export const MESSAGES = {
   ru: {
     badInput: 'Введите адрес публичного сайта, например example.ru',
     tooSlow: 'Сайт слишком долго не отвечал',
-    badAnswer: (status, url) => `Сайт ответил ${status ? `кодом ${status}` : 'ничем'} на ${url}`,
+    badAnswer: (status, url) => `Сайт ответил кодом ${status} на ${url}`,
+    unreachable: (url) => `По адресу ${url} никто не ответил. Чаще всего это опечатка в адресе: проверьте написание. Если сайт там действительно есть, значит он сейчас недоступен.`,
     botWall: (status) => `Сайт отказывает незнакомым клиентам (код ${status}), поэтому прочитать хотя бы одну страницу проверка не смогла.`,
     botChallenge: (status) => `Сайт закрыт проверкой браузера (Cloudflare, код ${status}), поэтому прочитать хотя бы одну страницу проверка не смогла.`,
     rulesAllowBots: (list) => ` Правила самого сайта роботов ИИ при этом пускают (${list}), а защита такого типа проверенных роботов нередко пропускает. Пустят ли их на деле, решает защита, а не эта проверка, поэтому в плюс или в минус сайту это не зачтено.`,
@@ -403,8 +406,9 @@ export async function checkVisibility(input, { budgetMs = 8500, lang = 'en', sam
      */
     const note = blockedNote({ status: home.status, challenged, blocked, robotsText: robotsRes.ok ? robotsRes.text : null, lang });
     const error = home.error === 'timeout' ? T.tooSlow
-      : blocked ? note.text
-        : T.badAnswer(home.status, url);
+      : home.error === 'unreachable' || !home.status ? T.unreachable(url)
+        : blocked ? note.text
+          : T.badAnswer(home.status, url);
     // `botsBlocked` говорит только про написанные правила, а не про поведение защиты: по нему
     // нельзя утверждать, что робота не пустили, можно лишь, что ему не разрешали.
     return { ok: false, blocked, challenged, status: home.status, error, botsBlocked: note.botsBlocked };
