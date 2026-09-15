@@ -659,10 +659,15 @@ export function verifyScores(audit) {
    * давать в сумме ровно заголовок. Ровно это и защищает от числа, взятого с потолка.
    */
   if (audit.overall && audit.overall.score !== undefined && audit.overall.score !== null && Array.isArray(audit.overall.areas) && audit.overall.areas.length) {
-    const sum = audit.overall.areas.reduce((acc, x) => acc + (Number(x.score) || 0), 0);
-    if (sum !== audit.overall.score) problems.push(`overall: the report says ${show100(audit.overall.score)}, its own five areas add up to ${sum}`);
-    const max = audit.overall.areas.reduce((acc, x) => acc + (Number(x.max) || 0), 0);
-    if (max !== 100) problems.push(`overall: the five areas are out of ${max}, not 100`);
+    // Неизмеренная область (robots.txt не прочитался) из суммы выпадает, а балл переносится на
+    // сто по измеренному. Сходимость проверяется той же арифметикой, что его посчитала.
+    const measured = audit.overall.areas.filter((x) => x.measured !== false && x.score !== null);
+    const sum = measured.reduce((acc, x) => acc + (Number(x.score) || 0), 0);
+    const max = measured.reduce((acc, x) => acc + (Number(x.max) || 0), 0);
+    const expected = max === 100 ? sum : (max > 0 ? Math.round((sum / max) * 100) : null);
+    if (expected !== audit.overall.score) problems.push(`overall: the report says ${show100(audit.overall.score)}, its own measured areas give ${expected === null ? 'nothing' : show100(expected)} (${sum} of ${max})`);
+    const all = audit.overall.areas.reduce((acc, x) => acc + (Number(x.max) || 0), 0);
+    if (all !== 100) problems.push(`overall: the five areas are out of ${all}, not 100`);
   }
 
   // Балл по проверкам самого отчёта это отдельное измерение, и он пересчитывается из checks.

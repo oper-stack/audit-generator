@@ -49,9 +49,16 @@ export const MESSAGES = {
     badInput: 'Enter a public site address, for example example.com',
     tooSlow: 'The site took too long to answer',
     badAnswer: (status, url) => `The site answered ${status || 'nothing'} for ${url}`,
-    botWall: (status) => `The site refuses unknown clients (HTTP ${status}). AI fetchers that do not run a browser get the same answer, so nothing here can be read or quoted.`,
-    botChallenge: (status) => `The site sits behind a browser challenge (Cloudflare, HTTP ${status}). AI fetchers do not run one, so ChatGPT, Perplexity and the rest are turned away exactly as this check was, and nothing on the site can be quoted.`,
+    botWall: (status) => `The site refuses unknown clients (HTTP ${status}), so this check could not read a single page.`,
+    botChallenge: (status) => `The site sits behind a browser challenge (Cloudflare, HTTP ${status}), so this check could not read a single page.`,
+    // Что мы знаем про роботов ИИ, когда нас самих развернули: ровно то, что написано в правилах
+    // сайта, и ни словом больше. Пускают ли их на самом деле, решает защита, а не мы.
+    rulesAllowBots: (list) => ` The site's own rules do allow the AI crawlers (${list}), and sites behind this kind of protection often do let the verified ones through. Whether they get in is decided by the protection, not by this check, so nothing here is counted for or against the site.`,
+    rulesBlockBots: (list) => ` The site's own rules also close it to AI crawlers (${list}), so on top of this wall there is a written refusal.`,
+    rulesUnknown: ' Its robots.txt could not be read either, so there is nothing to say about AI crawlers: that is not counted for or against the site.',
+    howToCheckBots: ' To know for certain, open the server log and look for GPTBot, ClaudeBot and PerplexityBot, or ask whoever runs the protection which bots are on the allowlist.',
     area: { access: 'Can AI crawlers read it', index: 'Is there a map for agents (llms.txt)', entity: 'Is the entity clear (schema)', content: 'Is there something to quote', trust: 'Can it be dated and trusted' },
+    robotsUnreadable: (status) => `The site did not let this check read robots.txt${status ? ` (HTTP ${status})` : ''}, so whether AI crawlers are allowed could not be measured. It is not counted for or against the site: an unread file is not good news. The owner can open it in a browser, or ask whoever runs the site's protection.`,
     robotsAllBlocked: 'robots.txt disallows the whole site for every crawler. Nothing can read it.',
     fetchersBlocked: (list) => `Blocked answer-engine fetchers: ${list}. These are the bots that cite pages live.`,
     trainingBlocked: (list) => `Blocked training crawlers: ${list}. Models will not learn the brand from the site.`,
@@ -90,9 +97,14 @@ export const MESSAGES = {
     badInput: 'Введите адрес публичного сайта, например example.ru',
     tooSlow: 'Сайт слишком долго не отвечал',
     badAnswer: (status, url) => `Сайт ответил ${status ? `кодом ${status}` : 'ничем'} на ${url}`,
-    botWall: (status) => `Сайт отказывает незнакомым клиентам (код ${status}). Роботы ИИ, которые не запускают браузер, получают тот же ответ, поэтому прочитать и процитировать здесь нечего.`,
-    botChallenge: (status) => `Сайт закрыт проверкой браузера (Cloudflare, код ${status}). Роботы ИИ её не проходят, поэтому ChatGPT, Perplexity и остальных разворачивают ровно так же, как развернули эту проверку, и процитировать с сайта нельзя ничего.`,
+    botWall: (status) => `Сайт отказывает незнакомым клиентам (код ${status}), поэтому прочитать хотя бы одну страницу проверка не смогла.`,
+    botChallenge: (status) => `Сайт закрыт проверкой браузера (Cloudflare, код ${status}), поэтому прочитать хотя бы одну страницу проверка не смогла.`,
+    rulesAllowBots: (list) => ` Правила самого сайта роботов ИИ при этом пускают (${list}), а защита такого типа проверенных роботов нередко пропускает. Пустят ли их на деле, решает защита, а не эта проверка, поэтому в плюс или в минус сайту это не зачтено.`,
+    rulesBlockBots: (list) => ` Правила самого сайта роботов ИИ тоже закрывают (${list}), то есть к этой стене добавлен ещё и письменный отказ.`,
+    rulesUnknown: ' Файл robots.txt прочитать тоже не вышло, поэтому про роботов ИИ сказать нечего, и в плюс или в минус сайту это не зачтено.',
+    howToCheckBots: ' Чтобы знать точно, посмотрите в журнале сервера, приходят ли GPTBot, ClaudeBot и PerplexityBot, либо спросите у тех, кто настраивал защиту, кто у неё в белом списке.',
     area: { access: 'Могут ли роботы ИИ прочитать сайт', index: 'Есть ли карта для агентов (llms.txt)', entity: 'Понятно ли, кто вы (разметка)', content: 'Есть ли что процитировать', trust: 'Можно ли датировать и доверять' },
+    robotsUnreadable: (status) => `Сайт не дал этой проверке прочитать robots.txt${status ? ` (код ${status})` : ''}, поэтому допущены роботы ИИ или нет, измерить не вышло. В плюс или в минус сайту это не зачтено: непрочитанный файл это не хорошая новость. Владелец может открыть его в браузере сам или спросить у тех, кто настраивал защиту сайта.`,
     robotsAllBlocked: 'robots.txt закрывает весь сайт для всех роботов. Его никто не может прочитать.',
     fetchersBlocked: (list) => `Закрыты поисковые роботы ответных систем: ${list}. Именно они достают страницу, чтобы процитировать её в ответе.`,
     trainingBlocked: (list) => `Закрыты обучающие роботы: ${list}. Модели не узнают о бренде с сайта.`,
@@ -325,6 +337,33 @@ async function readSitemap(origin, robotsText, timeoutFn = () => 3000) {
  */
 export const VISIBILITY_DEFAULTS = Object.freeze({ budgetMs: 8500, samplePages: 3 });
 
+/**
+ * Что писать владельцу сайта, который нас не пустил.
+ *
+ * Отдельной функцией намеренно: это самый ответственный текст всей проверки. Он уходит человеку
+ * про его собственный сайт, и до 15.09.2026 он врал. Стояло «роботы ИИ её не проходят, поэтому
+ * ChatGPT, Perplexity и остальных разворачивают ровно так же». Это вывод о чужом сайте из того,
+ * что развернули НАС. Замерено руками на alternativeto.net: тот же адрес отдаёт GPTBot, ClaudeBot
+ * и PerplexityBot полную страницу (200, около 900 КБ), а нашей проверке 403. Защита такого типа
+ * держит белый список проверенных роботов.
+ *
+ * Граница проходит здесь: мы знаем, что не пустили нас, и знаем, что написано в robots.txt (его
+ * отдают и тогда, когда страницы закрыты). Поведение защиты по отношению к чужим роботам мы не
+ * измеряли и утверждать про него не имеем права.
+ */
+export function blockedNote({ status, challenged, blocked = true, robotsText = null, lang = 'en' } = {}) {
+  const T = MESSAGES[lang] || MESSAGES.en;
+  const head = challenged ? T.botChallenge(status) : T.botWall(status);
+  if (!blocked) return { text: head, botsBlocked: null };
+  const rules = robotsText ? parseRobots(robotsText) : null;
+  if (!rules) return { text: head + T.rulesUnknown + T.howToCheckBots, botsBlocked: null };
+  const closed = AI_AGENTS.filter((a) => agentVerdict(rules, a.agent) === 'blocked');
+  const names = (list) => list.slice(0, 3).map((a) => (lang === 'ru' ? a.labelRu : a.label)).join(', ')
+    + (list.length > 3 ? (lang === 'ru' ? ` и ещё ${list.length - 3}` : `, and ${list.length - 3} more`) : '');
+  const tail = closed.length ? T.rulesBlockBots(names(closed)) : T.rulesAllowBots(names(AI_AGENTS));
+  return { text: head + tail + T.howToCheckBots, botsBlocked: closed.length > 0 };
+}
+
 export async function checkVisibility(input, { budgetMs = 8500, lang = 'en', samplePages = 3 } = {}) {
   const T = MESSAGES[lang] || MESSAGES.en;
   const agentLabel = (a) => (lang === 'ru' ? a.labelRu : a.label);
@@ -343,11 +382,28 @@ export async function checkVisibility(input, { budgetMs = 8500, lang = 'en', sam
     // её не проходит, поэтому сайт за ней невидим для всех ассистентов, что бы ни было на
     // страницах. Пришло из актора Apify, где это работало, а на сайтах человек видел «403».
     const challenged = blocked && (/challenge|managed/i.test(home.mitigated) || (/cloudflare/i.test(home.server) && home.status === 403));
+
+    /*
+     * Чего мы НЕ знаем, когда нас развернули.
+     *
+     * До 15.09.2026 здесь стояло «роботы ИИ её не проходят, поэтому ChatGPT, Perplexity и
+     * остальных разворачивают ровно так же». Это вывод о чужом сайте, сделанный из того, что
+     * развернули НАС. Проверено руками на alternativeto.net: один и тот же адрес отдаёт GPTBot,
+     * ClaudeBot и PerplexityBot полную страницу (200, около 900 КБ), а нашей проверке 403.
+     * Защита такого типа держит белый список проверенных роботов и пускает их по адресам, а
+     * незнакомого клиента разворачивает. То есть мы писали владельцу сайта неправду про его сайт.
+     *
+     * Что мы знаем на самом деле: нас не пустили, и что написано в robots.txt. Его отдают и тогда,
+     * когда страницы закрыты, поэтому правила прочитать обычно можно. Их и называем, а догадку о
+     * поведении защиты не выдаём за измерение.
+     */
+    const note = blockedNote({ status: home.status, challenged, blocked, robotsText: robotsRes.ok ? robotsRes.text : null, lang });
     const error = home.error === 'timeout' ? T.tooSlow
-      : challenged ? T.botChallenge(home.status)
-        : blocked ? T.botWall(home.status)
-          : T.badAnswer(home.status, url);
-    return { ok: false, blocked, challenged, status: home.status, error };
+      : blocked ? note.text
+        : T.badAnswer(home.status, url);
+    // `botsBlocked` говорит только про написанные правила, а не про поведение защиты: по нему
+    // нельзя утверждать, что робота не пустили, можно лишь, что ему не разрешали.
+    return { ok: false, blocked, challenged, status: home.status, error, botsBlocked: note.botsBlocked };
   }
   const homePage = analysePage(home.text, home.url);
   const robots = parseRobots(robotsRes.ok ? robotsRes.text : '');
@@ -372,10 +428,23 @@ export async function checkVisibility(input, { budgetMs = 8500, lang = 'en', sam
   const blockedTrain = verdicts.filter((v) => v.kind === 'train' && v.verdict === 'blocked');
   const starBlocked = agentVerdict(robots, '__none__') === 'blocked';
   const noai = pages.some((p) => p.noai);
+  /*
+   * robots.txt может не прочитаться, и тогда мерить эту область нечем.
+   *
+   * До 15.09.2026 такой случай давал полные 25 из 25 и надпись «Все 14 роботов ИИ допущены на
+   * сайт»: файла нет, значит запретов нет, значит отлично. Замерено на cian.ru, где robots.txt
+   * отдаёт 403, а сайт при этом разворачивает клиента, представившегося GPTBot. Владелец получал
+   * отличную оценку за файл, который мы не открывали.
+   *
+   * Незнание это не хорошая новость. Область помечается неизмеренной, из знаменателя выпадает,
+   * и балл считается по тому, что действительно прочитано.
+   */
+  const robotsRead = robotsRes.ok;
   let access = 25;
   if (starBlocked) access = 0; else { access -= Math.min(15, blockedSearch.length * 4); access -= Math.min(8, blockedTrain.length * 2); if (noai) access -= 5; }
   access = Math.max(0, access);
   const accessFindings = [];
+  if (!robotsRead) accessFindings.push({ id: 'robots-unreadable', level: 'na', text: T.robotsUnreadable(robotsRes.status || 0) });
   if (starBlocked) accessFindings.push({ id: 'robots-all-blocked', level: 'fail', text: T.robotsAllBlocked });
   if (blockedSearch.length) accessFindings.push({ id: 'robots-fetchers-blocked', level: 'fail', text: T.fetchersBlocked(blockedSearch.map(agentLabel).join(', ')) });
   if (blockedTrain.length) accessFindings.push({ id: 'robots-training-blocked', level: 'warn', text: T.trainingBlocked(blockedTrain.map(agentLabel).join(', ')) });
@@ -472,13 +541,23 @@ export async function checkVisibility(input, { budgetMs = 8500, lang = 'en', sam
   }
 
   const areas = [
-    { id: 'access', label: T.area.access, score: access, max: 25, findings: accessFindings },
+    { id: 'access', label: T.area.access, score: robotsRead ? access : null, max: 25, measured: robotsRead, findings: accessFindings },
     { id: 'index', label: T.area.index, score: index, max: 15, findings: indexFindings },
     { id: 'entity', label: T.area.entity, score: entity, max: 20, findings: entityFindings },
     { id: 'content', label: T.area.content, score: content, max: 25, findings: contentFindings },
     { id: 'trust', label: T.area.trust, score: trust, max: 15, findings: trustFindings },
   ];
-  const total = areas.reduce((a, x) => a + x.score, 0);
+  /*
+   * Балл считается по измеренному и переносится на сто.
+   *
+   * Неизмеренная область выпадает из знаменателя, а не получает ноль: ноль это утверждение, что
+   * там плохо, а мы этого не знаем. Правило одно на весь продукт: не измерили, значит не считаем
+   * ни в плюс, ни в минус.
+   */
+  const measured = areas.filter((a) => a.measured !== false);
+  const maxMeasured = measured.reduce((a, x) => a + x.max, 0);
+  const rawTotal = measured.reduce((a, x) => a + x.score, 0);
+  const total = maxMeasured === 100 ? rawTotal : Math.round((rawTotal / maxMeasured) * 100);
   const grade = total >= 80 ? 'A' : total >= 65 ? 'B' : total >= 45 ? 'C' : total >= 25 ? 'D' : 'E';
   const fixes = areas.flatMap((a) => a.findings.filter((f) => f.level === 'fail').map((f) => ({ id: f.id, area: a.label, text: f.text }))).concat(areas.flatMap((a) => a.findings.filter((f) => f.level === 'warn').map((f) => ({ id: f.id, area: a.label, text: f.text })))).slice(0, 3);
   return {
