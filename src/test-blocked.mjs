@@ -80,5 +80,21 @@ const CLOSED = 'User-agent: GPTBot\nDisallow: /\n\nUser-agent: ClaudeBot\nDisall
   ok('в английском нет кириллицы', !/[А-Яа-яЁё]/.test(blockedNote({ status: 403, challenged: true, robotsText: OPEN, lang: 'en' }).text));
 }
 
+// ---- несуществующий адрес: человек чаще всего просто опечатался
+//
+// Стояло «Сайт ответил ничем на https://…»: и коряво, и бесполезно. Человек, который ошибся в
+// букве, должен узнать об этом первым делом, а не гадать, что с его сайтом.
+{
+  const { checkVisibility } = await import('./visibility.mjs');
+  for (const lang of ['ru', 'en']) {
+    const v = await checkVisibility('https://takogo-domena-tochno-net-4f7a2b9c.ru/', { budgetMs: 8500, samplePages: 3, lang });
+    ok(`${lang}: балла у несуществующего адреса нет`, v.ok === false);
+    ok(`${lang}: названа вероятная причина, опечатка`, lang === 'ru' ? /опечатка в адресе/.test(v.error) : /typo in the address/.test(v.error));
+    ok(`${lang}: сказано, что делать`, lang === 'ru' ? /проверьте написание/.test(v.error) : /check the spelling/.test(v.error));
+    ok(`${lang}: нет старого «ответил ничем»`, lang === 'ru' ? !/ответил ничем/.test(v.error) : !/answered nothing/.test(v.error));
+    ok(`${lang}: чужого языка нет`, lang === 'ru' ? !/[A-Za-z]{5}/.test(v.error.replace(/https?:\/\/[^\s]+/g, '')) : !/[А-Яа-яЁё]/.test(v.error));
+  }
+}
+
 if (bad) { console.error(`\n${bad} тест(ов) упало`); process.exit(1); }
 console.log('\nпро чужой сайт говорим только измеренное');
