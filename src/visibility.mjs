@@ -58,6 +58,7 @@ export const MESSAGES = {
     rulesUnknown: ' Its robots.txt could not be read either, so there is nothing to say about AI crawlers: that is not counted for or against the site.',
     howToCheckBots: ' To know for certain, open the server log and look for GPTBot, ClaudeBot and PerplexityBot, or ask whoever runs the protection which bots are on the allowlist.',
     area: { access: 'Can AI crawlers read it', index: 'Is there a map for agents (llms.txt)', entity: 'Is the entity clear (schema)', content: 'Is there something to quote', trust: 'Can it be dated and trusted' },
+    robotsMissing: 'There is no robots.txt on the site. By the standard that means nothing is disallowed, so every AI crawler may read it. A file is not required; add one only when something needs closing off.',
     robotsUnreadable: (status) => `The site did not let this check read robots.txt${status ? ` (HTTP ${status})` : ''}, so whether AI crawlers are allowed could not be measured. It is not counted for or against the site: an unread file is not good news. The owner can open it in a browser, or ask whoever runs the site's protection.`,
     robotsAllBlocked: 'robots.txt disallows the whole site for every crawler. Nothing can read it.',
     fetchersBlocked: (list) => `Blocked answer-engine fetchers: ${list}. These are the bots that cite pages live.`,
@@ -104,6 +105,7 @@ export const MESSAGES = {
     rulesUnknown: ' Файл robots.txt прочитать тоже не вышло, поэтому про роботов ИИ сказать нечего, и в плюс или в минус сайту это не зачтено.',
     howToCheckBots: ' Чтобы знать точно, посмотрите в журнале сервера, приходят ли GPTBot, ClaudeBot и PerplexityBot, либо спросите у тех, кто настраивал защиту, кто у неё в белом списке.',
     area: { access: 'Могут ли роботы ИИ прочитать сайт', index: 'Есть ли карта для агентов (llms.txt)', entity: 'Понятно ли, кто вы (разметка)', content: 'Есть ли что процитировать', trust: 'Можно ли датировать и доверять' },
+    robotsMissing: 'Файла robots.txt на сайте нет. По стандарту это значит, что не запрещено ничего, то есть читать сайт может любой робот ИИ. Заводить файл необязательно: он нужен, только когда есть что закрывать.',
     robotsUnreadable: (status) => `Сайт не дал этой проверке прочитать robots.txt${status ? ` (код ${status})` : ''}, поэтому допущены роботы ИИ или нет, измерить не вышло. В плюс или в минус сайту это не зачтено: непрочитанный файл это не хорошая новость. Владелец может открыть его в браузере сам или спросить у тех, кто настраивал защиту сайта.`,
     robotsAllBlocked: 'robots.txt закрывает весь сайт для всех роботов. Его никто не может прочитать.',
     fetchersBlocked: (list) => `Закрыты поисковые роботы ответных систем: ${list}. Именно они достают страницу, чтобы процитировать её в ответе.`,
@@ -439,12 +441,25 @@ export async function checkVisibility(input, { budgetMs = 8500, lang = 'en', sam
    * Незнание это не хорошая новость. Область помечается неизмеренной, из знаменателя выпадает,
    * и балл считается по тому, что действительно прочитано.
    */
-  const robotsRead = robotsRes.ok;
+  /*
+   * «Файла нет» и «нам его не дали» это разные вещи, и путать их нельзя ни в одну сторону.
+   *
+   * 404 и 410 это определённый ответ: файла на сайте нет, а по стандарту отсутствие robots.txt
+   * означает, что не запрещено ничего. Это измерение, и область получает свои баллы честно.
+   * Первая версия правки 15.09.2026 считала неизмеренным любой неуспех, и сайт без robots.txt
+   * (таких много среди небольших) терял 25 заслуженных баллов: example.com упал с 30 до 7.
+   *
+   * Неизмеренное это только отказ и сбой: 401, 403, 405, 429, пятисотые, таймаут, недоступность.
+   * Тогда мы действительно не знаем, что в файле написано.
+   */
+  const robotsMissing = robotsRes.status === 404 || robotsRes.status === 410;
+  const robotsRead = robotsRes.ok || robotsMissing;
   let access = 25;
   if (starBlocked) access = 0; else { access -= Math.min(15, blockedSearch.length * 4); access -= Math.min(8, blockedTrain.length * 2); if (noai) access -= 5; }
   access = Math.max(0, access);
   const accessFindings = [];
   if (!robotsRead) accessFindings.push({ id: 'robots-unreadable', level: 'na', text: T.robotsUnreadable(robotsRes.status || 0) });
+  else if (robotsMissing && !accessFindings.length) accessFindings.push({ level: 'pass', text: T.robotsMissing });
   if (starBlocked) accessFindings.push({ id: 'robots-all-blocked', level: 'fail', text: T.robotsAllBlocked });
   if (blockedSearch.length) accessFindings.push({ id: 'robots-fetchers-blocked', level: 'fail', text: T.fetchersBlocked(blockedSearch.map(agentLabel).join(', ')) });
   if (blockedTrain.length) accessFindings.push({ id: 'robots-training-blocked', level: 'warn', text: T.trainingBlocked(blockedTrain.map(agentLabel).join(', ')) });
