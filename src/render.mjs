@@ -11,6 +11,7 @@ import { computeScores, computeOverall } from './collect.mjs';
 import { localiseBasisNote, AREAS_RU } from './i18n.mjs';
 import { MESSAGES as VISIBILITY_MESSAGES } from './visibility.mjs';
 import { softenHex } from './agency.mjs';
+import { renderDemandHtml, demandSourceRow } from './demand.mjs';
 
 const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const isPlaceholder = (s) => typeof s === 'string' && /\{\{[^}]*\}\}/.test(s);
@@ -53,7 +54,7 @@ const LABELS = {
     secOffpage: 'Off-page, conversion, limitations', offpageEyebrow: '07 · Off-page', offpageTitle: 'Off-page and trust', conversionEyebrow: '08 · Conversion', conversionTitle: 'Conversion and UX', colElement: 'Element', limitationsEyebrow: '09 · Limitations', sourcesTitle: 'Where the data comes from', colSource: 'Source', colAccess: 'Access', colWhatRead: 'What was read',
     sourcesFoot: 'Every score in this report is computed from sources marked free. Nothing that costs money is counted in a score, so you can re-run this audit yourself and get the same numbers.',
     limitations: 'Limitations',
-    secRoadmap: 'Roadmap', roadmapEyebrow: '10 · Roadmap', roadmapTitle: 'What to do, in order', keyMessage: 'Key message:',
+    secRoadmap: 'Roadmap', roadmapEyebrow: '10 · Roadmap', demandEyebrow: '11 · Demand', demandTitle: 'Demand map', secDemand: 'Demand', roadmapTitle: 'What to do, in order', keyMessage: 'Key message:',
     runningHead: 'SEO, AEO and GEO audit',
     statusOk: '✓ OK', statusWarn: '△ Partial', statusBad: '✗ Problem', statusNa: '· Note',
     areas: null,
@@ -93,7 +94,7 @@ const LABELS = {
     secOffpage: 'Ссылки, конверсия, ограничения', offpageEyebrow: '07 · Ссылки', offpageTitle: 'Ссылки и доверие', conversionEyebrow: '08 · Конверсия', conversionTitle: 'Конверсия и удобство', colElement: 'Элемент', limitationsEyebrow: '09 · Ограничения', sourcesTitle: 'Откуда взяты данные', colSource: 'Источник', colAccess: 'Доступ', colWhatRead: 'Что прочитали',
     sourcesFoot: 'Каждая оценка в этом отчёте посчитана из источников с пометкой «бесплатно». Ничего платного ни в одну оценку не входит, поэтому вы можете повторить этот аудит сами и получить те же цифры.',
     limitations: 'Ограничения',
-    secRoadmap: 'План работ', roadmapEyebrow: '10 · План', roadmapTitle: 'Что делать и в каком порядке', keyMessage: 'Главное сообщение:',
+    secRoadmap: 'План работ', roadmapEyebrow: '10 · План', demandEyebrow: '11 · Спрос', demandTitle: 'Карта спроса', secDemand: 'Спрос', roadmapTitle: 'Что делать и в каком порядке', keyMessage: 'Главное сообщение:',
     runningHead: 'Аудит SEO, AEO и GEO',
     statusOk: '✓ Норма', statusWarn: '△ Частично', statusBad: '✗ Проблема', statusNa: '· Заметка',
     areas: AREAS_RU,
@@ -214,7 +215,12 @@ function css() {
   table { width: 100%; border-collapse: collapse; margin: 3mm 0 5mm; font-size: 9.2pt; }
   th { text-align: left; padding: 2.5mm 3mm; font-size: 7.8pt; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); border-bottom: 2px solid var(--ink); font-weight: 600; }
   td { padding: 2.2mm 3mm; border-bottom: 1px solid var(--rule); vertical-align: top; }
-  .status-ok { color: var(--ok); font-weight: 600; white-space: nowrap; } .status-warn { color: var(--warn); font-weight: 600; white-space: nowrap; } .status-bad { color: var(--danger); font-weight: 600; white-space: nowrap; } .status-na { color: var(--muted); }
+  .status-ok { color: var(--ok); font-weight: 600; white-space: nowrap; } .status-warn { color: var(--warn); font-weight: 600; white-space: nowrap; } .status-bad { color: var(--danger); font-weight: 600; white-space: nowrap; }
+  .kpis { display: flex; gap: 4mm; margin: 4mm 0 5mm; }
+  .kpi { flex: 1; background: var(--panel); border-radius: 4px; padding: 3mm 4mm; }
+  .kpi-value { font-family: "Fraunces", "Iowan Old Style", Georgia, serif; font-size: 17pt; font-weight: 600; color: var(--ink); line-height: 1.1; }
+  .kpi-label { font-size: 8.5pt; color: var(--muted); margin-top: 1mm; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; } .status-na { color: var(--muted); }
   .cards { display: grid; gap: 3mm; margin: 4mm 0; }
   .card { border-left: 3px solid var(--danger); background: #fbf1f0; padding: 3.5mm 4mm; border-radius: 0 4px 4px 0; }
   .card.warn { border-left-color: var(--warn); background: #fdf8ee; }
@@ -299,9 +305,15 @@ export function toHtml(audit, brand = null) {
   const geoRows = [...checksBy('aeo'), ...checksBy('geo')].map((c) => `<tr><td>${esc(c.label)}</td>${statusCell(c.status, L)}<td>${esc(c.value)}${c.comment ? `. ${esc(c.comment.charAt(0).toUpperCase() + c.comment.slice(1))}` : ''}</td></tr>`).join('') + (a.geo.rows || []).map(([k, s, d]) => `<tr><td>${t(k)}</td><td>${t(s)}</td><td>${t(d)}</td></tr>`).join('');
   pages.push(`<div class="page">${header(a, L.secAeo, L)}<div class="eyebrow">${L.aeoEyebrow}</div><h2>${L.aeoTitle}</h2><p class="lead">Whether the site's answers can be lifted into "People also ask", AI overviews, ChatGPT and Perplexity.</p><div class="two-col"><div><h3>${L.aeoWorks}</h3>${list(a.aeo.works)}</div><div><h3>${L.aeoBlocks}</h3>${list(a.aeo.blocks)}</div></div><div class="callout"><p><strong>${L.recommendation}</strong> ${t(a.aeo.recommendation)}</p></div><h2>${L.geoTitle}</h2><table><tr><th>${L.colSignal}</th><th>${L.colStatus}</th><th>${L.colDetail}</th></tr>${geoRows}</table><div class="callout"><p>${t(a.geo.callout)}</p></div>${footer(a, n++, preparedBy)}</div>`);
   const checkTable = (g) => (checksBy(g).length ? `<table><tr><th>${L.colCheck}</th><th>${L.colStatus}</th><th>${L.colFinding}</th></tr>${checksBy(g).map((c) => `<tr><td>${esc(c.label)}</td>${statusCell(c.status, L)}<td>${esc(c.value)}${c.comment ? `<br><span style="color:var(--muted)">${esc(c.comment)}</span>` : ''}</td></tr>`).join('')}</table>` : '');
-  pages.push(`<div class="page">${header(a, L.secOffpage, L)}<div class="eyebrow">${L.offpageEyebrow}</div><h2>${L.offpageTitle}</h2>${checkTable('offpage')}${list(a.offpage.listed)}<p>${t(a.offpage.note)}</p><div class="eyebrow" style="margin-top:8mm">${L.conversionEyebrow}</div><h2>${L.conversionTitle}</h2>${checkTable('conversion')}<table><tr><th>${L.colElement}</th><th>${L.colStatus}</th></tr>${(a.conversion.rows || []).map(([k, v]) => `<tr><td>${t(k)}</td><td>${t(v)}</td></tr>`).join('')}</table><div class="eyebrow" style="margin-top:8mm">${L.limitationsEyebrow}</div><h2>${L.sourcesTitle}</h2>${(a.sources || []).length ? `<table><tr><th>${L.colSource}</th><th>${L.colAccess}</th><th>${L.colWhatRead}</th></tr>${a.sources.map((s) => `<tr><td>${t(s.name)}</td><td>${t(s.access)}</td><td>${t(s.detail)}</td></tr>`).join('')}</table><p class="scorecard-foot">${L.sourcesFoot}</p>` : ''}<h3>${L.limitations}</h3>${list(a.limitations)}${footer(a, n++, preparedBy)}</div>`);
+  const sources = [...(a.sources || []), ...(a.demand && Array.isArray(a.demand.queries) ? [demandSourceRow(a.demand, a.meta?.lang === 'ru' ? 'ru' : 'en')] : [])];
+  pages.push(`<div class="page">${header(a, L.secOffpage, L)}<div class="eyebrow">${L.offpageEyebrow}</div><h2>${L.offpageTitle}</h2>${checkTable('offpage')}${list(a.offpage.listed)}<p>${t(a.offpage.note)}</p><div class="eyebrow" style="margin-top:8mm">${L.conversionEyebrow}</div><h2>${L.conversionTitle}</h2>${checkTable('conversion')}<table><tr><th>${L.colElement}</th><th>${L.colStatus}</th></tr>${(a.conversion.rows || []).map(([k, v]) => `<tr><td>${t(k)}</td><td>${t(v)}</td></tr>`).join('')}</table><div class="eyebrow" style="margin-top:8mm">${L.limitationsEyebrow}</div><h2>${L.sourcesTitle}</h2>${sources.length ? `<table><tr><th>${L.colSource}</th><th>${L.colAccess}</th><th>${L.colWhatRead}</th></tr>${sources.map((s) => `<tr><td>${t(s.name)}</td><td>${t(s.access)}</td><td>${t(s.detail)}</td></tr>`).join('')}</table><p class="scorecard-foot">${L.sourcesFoot}</p>` : ''}<h3>${L.limitations}</h3>${list(a.limitations)}${footer(a, n++, preparedBy)}</div>`);
   const phases = (a.roadmap || []).map((p) => `<div class="phase"><div class="phase-head"><span class="badge">${esc(p.badge)}</span><span class="phase-title">${t(p.title)}</span></div>${olist(p.items)}</div>`).join('');
   pages.push(`<div class="page">${header(a, L.secRoadmap, L)}<div class="eyebrow">${L.roadmapEyebrow}</div><h2>${L.roadmapTitle}</h2>${phases}<div class="verdict"><p><strong>${L.keyMessage}</strong> ${t(a.closing)}</p></div>${footer(a, n++, preparedBy)}</div>`);
+  // Карта спроса идёт приложением после дорожной карты: она не входит в баллы, и об этом
+  // сказано в ней самой и в таблице источников выше.
+  if (a.demand && Array.isArray(a.demand.queries)) {
+    pages.push(`<div class="page">${header(a, L.secDemand, L)}<div class="eyebrow">${L.demandEyebrow}</div><h2>${L.demandTitle}</h2>${renderDemandHtml(a.demand, { lang: a.meta?.lang === 'ru' ? 'ru' : 'en' })}${footer(a, n++, preparedBy)}</div>`);
+  }
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${esc(a.client.name)}: SEO, AEO and GEO audit</title><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono&display=swap"><style>${css()}${accentCss}</style></head><body>${pages.join('\n')}</body></html>`;
 }
 

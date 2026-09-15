@@ -130,6 +130,19 @@ Each sampled page is read for five things: does it open with an answer carrying 
 
 The letter states the scope and the shares; `--price` adds the money, because a short page is sometimes short on purpose and an automatic invoice for rewriting it is an invoice for work that should not happen. Utility pages are excluded and counted separately: nobody rewrites a privacy policy to open with a figure. Sources are asked for only where the page actually carries figures. Without Search Console access the scope is built on a sitemap sample, and the letter says so rather than implying we picked the pages that matter.
 
+## The demand map: what people ask that the site has no page for
+
+Half of "why no enquiries" is usually the same answer: people ask questions the site never wrote a page for. `demand` builds that map for the audit tier.
+
+```
+npx @operstack/audit demand audit.json --lang ru --region 225 --attach
+npx @operstack/audit demand https://example.com --lang en --region 84 --dry
+```
+
+Three sources, each named in the output. The queries come from free Yandex and Google autocomplete: seeds are the site's own H1 and page titles (brand words removed, phrases cut before the first number), eight patterns per seed, and only phrases that carry a topic word of the site survive, because autocomplete is happy to carry "property investment" off to Dubai. Volumes come from Topvisor, our paid tool (`TOPVISOR_USER_ID` and `TOPVISOR_KEY` in the environment; `--dry` prices the run and launches nothing; about 0.02 RUB per query). Whether the site has a page for a query is a word match against every URL in the sitemap plus the titles of up to `--titles` of them (short URLs first), with Cyrillic and transliterated slugs brought to one form.
+
+The map is an appendix, page 11 of the report, and the sources table names Topvisor as paid and counted towards no score. The same text tells the buyer where to check the figures for free: Yandex Wordstat and the Google Ads Keyword Planner with their own account. A query without a volume says "no data", never 0. `--seeds "a; b"` overrides the automatic seeds when the analyst knows the niche better than the headings do; `--no-volumes` builds the map without numbers.
+
 ## Example
 
 `examples/sample-audit.json` is a complete, fictional audit of "Example Villas". `npm run sample` renders it to HTML and PDF next to the JSON.

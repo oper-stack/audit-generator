@@ -7,3 +7,4 @@ export { buildFixPlan, renderFixPlan, renderFixChecklist, buildFixReport, render
 export { buildFoundationScope, renderFoundationScope, renderFoundationChecklist } from './foundation.mjs';
 export { draftNarrative, stillEmpty } from './narrative.mjs';
 export { agentPrompt, agentPrompts, renderAgentPrompts, firstFixParts, FIRST_FIX_IDS } from './prompts.mjs';
+export { buildDemandMap, expandQueries, coverage, seedsFromPages, volumesViaTopvisor, topvisorClient, renderDemandHtml, renderDemandMarkdown, demandSourceRow, demandCsv, demandTotals, REGIONS as DEMAND_REGIONS, DEMAND_DEFAULTS } from './demand.mjs';

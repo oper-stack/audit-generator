@@ -30,6 +30,7 @@ import { buildFoundationScope, renderFoundationScope, renderFoundationChecklist 
 import { draftNarrative, stillEmpty } from '../src/narrative.mjs';
 import { renderAgentPrompts, agentPrompts } from '../src/prompts.mjs';
 import { render, checkNarrative } from '../src/render.mjs';
+import { buildDemandMap, renderDemandMarkdown, demandCsv } from '../src/demand.mjs';
 import { resolveBranding } from '../src/agency.mjs';
 import { rank, readList, runBatch, runProspect, split, summarise, toCsv, toMarkdown } from '../src/batch.mjs';
 import { writeFileSync, readFileSync } from 'node:fs';
@@ -51,6 +52,10 @@ if (!cmd || cmd === '--help' || cmd === '-h') {
     '      fill the narrative from the checks: the analyst edits a draft instead of writing one',
     '  operstack-audit prompts <audit.json> [--lang ru|en] [--limit 3] [--out prompts.md]',
     '      every finding rewritten as a task you can paste into Cursor or Claude Code',
+    '  operstack-audit demand <url | audit.json> [--lang ru|en] [--region 225] [--seeds "a; b"] [--max 200] [--titles 120] [--dry] [--no-volumes] [--attach]',
+    '      what people in the niche ask and which of it the site has no page for; queries from free',
+    '      autocomplete, volumes from Topvisor (TOPVISOR_USER_ID and TOPVISOR_KEY in env, --dry only prices it),',
+    '      --attach writes the map into audit.json so render prints it as an appendix',
     '  operstack-audit check <audit.json>',
     '      list narrative fields still holding placeholders and any score the checks do not support',
     '',
@@ -164,6 +169,20 @@ if (cmd === 'collect') {
   writeFileSync(out, renderAgentPrompts(audit, { lang, limit }));
   console.log(`${list.length} task(s): ${list.filter((x) => x.hasOwnText).length} written for that finding, ${list.filter((x) => !x.hasOwnText).length} generic`);
   console.log(`wrote ${out}`);
+} else if (cmd === 'demand') {
+  const isAudit = /\.json$/i.test(target || '');
+  const audit = isAudit ? JSON.parse(readFileSync(resolve(target), 'utf8')) : null;
+  const url = isAudit ? audit.meta.site : target;
+  const lang = opt('--lang', audit?.meta?.lang || 'en') === 'ru' ? 'ru' : 'en';
+  const seeds = opt('--seeds', '') ? opt('--seeds').split(';').map((s) => s.trim()).filter(Boolean) : undefined;
+  const d = await buildDemandMap(url, { lang, region: opt('--region'), seeds, pages: audit?.sample, brand: audit?.client?.name || '', max: Number(opt('--max', 200)) || 200, titles: Number(opt('--titles', 120)), dry: has('--dry'), volumes: !has('--no-volumes'), log: console.log });
+  const base = resolve(opt('--out', (isAudit ? target.replace(/\.json$/i, '') : d.host) + '-demand'));
+  writeFileSync(`${base}.json`, JSON.stringify(d, null, 2));
+  writeFileSync(`${base}.md`, renderDemandMarkdown(d));
+  writeFileSync(`${base}.csv`, demandCsv(d));
+  if (audit && has('--attach')) { audit.demand = d; writeFileSync(resolve(target), JSON.stringify(audit, null, 2)); console.log(`attached to ${target}`); }
+  console.log(`${d.totals.queries} queries, ${d.totals.uncovered} without a page; volumes: ${d.volumes.source}${d.volumes.price !== null && d.volumes.price !== undefined ? `, ${d.volumes.price} RUB` : ''}${d.volumes.note ? ` (${d.volumes.note})` : ''}`);
+  console.log(`wrote ${base}.json, .md, .csv`);
 } else if (cmd === 'fix-plan') {
   const audit = JSON.parse(readFileSync(resolve(target), 'utf8'));
   // Язык покупки решает и валюту, и письмо: за доллары платят по английскому списку, за рубли по русскому.
