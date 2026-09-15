@@ -174,3 +174,84 @@ export function renderAgentPrompts(audit, opts = {}) {
        'You do not need to know any code. Your job is to say what to do and look at the result.', ''];
   return [intro.join('\n').trimEnd(), ...list.map((x) => x.text)].join('\n\n');
 }
+
+/**
+ * Первая правка на бесплатной странице тремя частями: что сейчас, что поменять, как проверить.
+ *
+ * Зачем: бесплатная проверка (`checkVisibility`) отдаёт находки как { id, area, text }, а
+ * задания выше написаны по строкам аудита с другими ключами (`llms` против `llms-missing`).
+ * Страница показывала только текст находки, а три части приходили лишь письмом. Здесь каждая
+ * находка бесплатной проверки сопоставлена с заданием явно, по одному ключу на id; для находок,
+ * у которых задания в наборе нет, текст написан тут же. Неизвестный id даёт null: страница
+ * тогда честно показывает одну находку, а не чужое указание по чужому сайту.
+ *
+ * «Сейчас» это сам текст находки: он уже измерен и назван, второй раз не формулируем.
+ */
+const FIRST_FIX_BY_PROMPT = {
+  'robots-all-blocked': 'robots',
+  'robots-fetchers-blocked': 'ai-search-access',
+  'llms-missing': 'llms',
+  'canonical-missing': 'canonical',
+  'og-missing': 'og',
+  'schema-org-missing': 'schema',
+  'schema-faq-missing': 'faq-schema',
+  'dates-missing': 'dates',
+  'answer-first-missing': 'answer-first',
+  'sources-missing': 'sources',
+  'thin-pages': 'thin',
+};
+
+const FIRST_FIX_OWN = {
+  'robots-training-blocked': {
+    ru: { task: 'Реши, хочешь ли ты, чтобы модели ИИ учились на сайте. Если да, убери из robots.txt запреты для обучающих роботов, которые названы в строке «Сейчас». Если нет, оставь как есть: это осознанный выбор, а не ошибка, и балл он снижает немного.', verify: 'В robots.txt для названных обучающих роботов нет строки Disallow, либо решение закрыть их записано владельцем словами.' },
+    en: { task: 'Decide whether you want AI models to learn from the site. If yes, remove the robots.txt rules that block the training crawlers named under Now. If no, leave it: that is a deliberate choice, not a mistake, and it costs only a little of the score.', verify: 'robots.txt has no Disallow for the training crawlers named, or the decision to keep them out is written down by the owner.' },
+  },
+  'noai-meta': {
+    ru: { task: 'На одной из страниц стоит мета-тег robots со значением noai: он просит системы ИИ не использовать содержимое. Если хочешь, чтобы сайт цитировали в ответах, убери это значение из шаблона страниц. Если это осознанный запрет, оставь.', verify: 'В HTML проверенных страниц нет мета-тега robots со значением noai.' },
+    en: { task: 'One of the pages carries a robots meta tag with the value noai: it asks AI systems not to use the content. If you want the site quoted in answers, remove that value from the page template. If the ban is deliberate, leave it.', verify: 'The HTML of the sampled pages has no robots meta tag with the value noai.' },
+  },
+  'llms-foreign': {
+    ru: { task: 'Перепиши llms.txt так, чтобы ссылки в нём вели на страницы этого сайта, а не на чужие домены. Чужую ссылку оставь только там, где без неё нельзя (например, профиль в каталоге), и не в начале файла.', verify: 'Большинство ссылок в llms.txt ведут на этот же домен, и первые из них тоже.' },
+    en: { task: 'Rewrite llms.txt so its links point at pages of this site rather than other domains. Keep an outside link only where it cannot be avoided (a directory profile, say), and never at the top of the file.', verify: 'Most links in llms.txt point at this domain, and so do the first ones.' },
+  },
+  'llms-not-text': {
+    ru: { task: 'Адрес /llms.txt отдаёт HTML-страницу вместо текста. Сделай так, чтобы по этому адресу отдавался сам текстовый файл с типом text/plain, а не страница сайта и не заглушка «не найдено» с кодом 200.', verify: '/llms.txt отвечает кодом 200 с типом text/plain, и в ответе текстовый указатель, а не разметка HTML.' },
+    en: { task: '/llms.txt serves an HTML page instead of text. Make that address return the text file itself with the type text/plain, not a site page and not a "not found" page with a 200 status.', verify: '/llms.txt answers 200 with text/plain, and the body is a text index rather than HTML markup.' },
+  },
+  'schema-article-missing': {
+    ru: { task: 'Добавь на страницы статей и записей разметку Article или BlogPosting в JSON-LD: заголовок, дата публикации, дата изменения, автор, издатель. Бери данные со страницы, ничего не придумывай.', verify: 'На странице статьи есть JSON-LD с типом Article или BlogPosting, и проверка разметки не показывает ошибок.' },
+    en: { task: 'Add Article or BlogPosting markup in JSON-LD to the article pages: headline, date published, date modified, author, publisher. Take the data from the page, invent nothing.', verify: 'An article page carries JSON-LD of type Article or BlogPosting and the markup validator shows no errors.' },
+  },
+  'few-h2': {
+    ru: { task: 'Разбей длинные страницы на разделы: каждый начинается заголовком H2, который звучит как вопрос или тема раздела. На странице должно быть не меньше трёх таких разделов. Ради объёма ничего не дописывай, только структурируй то, что есть.', verify: 'На каждой проверенной странице не меньше трёх заголовков H2, и по ним понятно, о чём страница, без чтения текста.' },
+    en: { task: 'Split the long pages into sections, each opening with an H2 that reads as the question or topic of that section. A page needs at least three. Add nothing for length, only structure what is there.', verify: 'Every sampled page has at least three H2 headings, and they alone tell what the page is about.' },
+  },
+  'no-tables': {
+    ru: { task: 'Там, где на странице есть цифры, которые сравнивают (цены, сроки, площади, условия), собери их в таблицу с подписанными столбцами. Строй её только из данных, которые уже есть на странице или у владельца.', verify: 'На страницах со сравниваемыми цифрами есть хотя бы одна настоящая таблица (тег table), а не картинка и не список.' },
+    en: { task: 'Where a page has figures that get compared (prices, timings, areas, terms), put them in a table with labelled columns. Build it only from data already on the page or held by the owner.', verify: 'Pages with comparable figures carry at least one real table (a table tag), not an image and not a list.' },
+  },
+  'sitemap-no-lastmod': {
+    ru: { task: 'Проставь в карте сайта (sitemap.xml) каждой странице поле lastmod с настоящей датой последнего изменения содержимого. Дату сборки или сегодняшнее число во все строки не ставь: это хуже, чем пустое поле.', verify: 'У каждого url в sitemap.xml есть lastmod, даты различаются между страницами и совпадают с датой изменения на самой странице.' },
+    en: { task: 'Give every page in sitemap.xml a lastmod with the real date its content last changed. Do not stamp the build date or today on every line: that is worse than leaving it empty.', verify: 'Every url in sitemap.xml has a lastmod, the dates differ between pages and match the modified date on the page itself.' },
+  },
+};
+
+/** Все id находок бесплатной проверки, для которых есть три части. */
+export const FIRST_FIX_IDS = [...Object.keys(FIRST_FIX_BY_PROMPT), ...Object.keys(FIRST_FIX_OWN)];
+
+/**
+ * @param {{id?: string, area?: string, text?: string}} finding элемент `fixes[]` из `checkVisibility`
+ * @param {{lang?: 'ru'|'en'}} opts
+ * @returns {{now: string, task: string, verify: string, rule: string, labels: {now: string, task: string, verify: string}}|null}
+ */
+export function firstFixParts(finding, opts = {}) {
+  const lang = opts.lang === 'ru' ? 'ru' : 'en';
+  const h = HEAD[lang];
+  const id = finding && finding.id;
+  const now = String((finding && finding.text) || '').trim();
+  if (!id || !now) return null;
+  const own = FIRST_FIX_OWN[id] ? withLang(FIRST_FIX_OWN[id], lang)
+    : (FIRST_FIX_BY_PROMPT[id] && P[FIRST_FIX_BY_PROMPT[id]] ? withLang(P[FIRST_FIX_BY_PROMPT[id]], lang) : null);
+  if (!own || !own.task || !own.verify) return null;
+  return { now, task: own.task, verify: own.verify, rule: h.rule, labels: { now: h.now, task: h.task, verify: h.verify } };
+}

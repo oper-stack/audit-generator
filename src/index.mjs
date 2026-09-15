@@ -6,4 +6,4 @@ export { localiseChecks, localiseBasisNote, untranslated, AREAS_RU } from './i18
 export { buildFixPlan, renderFixPlan, renderFixChecklist, buildFixReport, renderFixReport, FIX_ACTIONS } from './fix.mjs';
 export { buildFoundationScope, renderFoundationScope, renderFoundationChecklist } from './foundation.mjs';
 export { draftNarrative, stillEmpty } from './narrative.mjs';
-export { agentPrompt, agentPrompts, renderAgentPrompts } from './prompts.mjs';
+export { agentPrompt, agentPrompts, renderAgentPrompts, firstFixParts, FIRST_FIX_IDS } from './prompts.mjs';
