@@ -77,7 +77,7 @@ const LABELS = {
       const read = o.basis ? `Прочитано ${p} ${pl} сайта${o.basis.sitemapUnchecked ? ', а карта сайта не ответила вовремя, и это не зачтено ни в плюс, ни в минус' : o.basis.sitemapRead ? ' и его карта' : ''}. ` : '';
       const where = o.source === 'visibility:reused'
         ? `Это ровно то число, которое вы уже видели в бесплатной проверке${o.measuredAt ? ` ${String(o.measuredAt).slice(0, 10)}` : ''}. Здесь оно не меряется заново, поэтому страница, письмо и этот отчёт всегда несут одно число. `
-        : 'Измерено здесь тем же кодом и с теми же настройками, что у бесплатной проверки на oper-stack.com/ai-visibility. ';
+        : 'Измерено здесь тем же кодом и с теми же настройками, что у бесплатной проверки на oper-stack.ru/ai-visibility. ';
       const areas = Array.isArray(o.areas) ? o.areas : [];
       const measured = areas.filter((a) => a.measured !== false && a.score !== null);
       const sumUp = areas.length && measured.length < areas.length
