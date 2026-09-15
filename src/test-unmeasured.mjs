@@ -27,9 +27,10 @@ const is = (n, a, b) => ok(`${n} (ждали ${JSON.stringify(b)}, вышло ${
 const PAGE = `<!doctype html><html lang="ru"><head><title>Пример</title><meta name="description" content="Описание"></head>
 <body><main><h1>Пример сайта</h1>${'<p>Обычный абзац текста про товар и цену, без цифр, чтобы было что цитировать. </p>'.repeat(40)}</main></body></html>`;
 
-const serve = ({ robots }) => new Promise((resolve) => {
+const serve = ({ robots, status = null }) => new Promise((resolve) => {
   const s = createServer((req, res) => {
     if (req.url.startsWith('/robots.txt')) {
+      if (status) { res.writeHead(status, { 'content-type': 'text/html' }); res.end('<html>нет</html>'); return; }
       if (robots === null) { res.writeHead(403, { 'content-type': 'text/html' }); res.end('<html>denied</html>'); return; }
       res.writeHead(200, { 'content-type': 'text/plain' }); res.end(robots); return;
     }
@@ -99,5 +100,33 @@ if (!dnsOk) {
   ok('подпись в отчёте прежняя', /дают в сумме ровно/.test((toHtml({ ...fixture, meta: { ...fixture.meta, lang: 'ru' }, overall: { ...fixture.overall, score: v2.score, areas: v2.areas } }, null).match(/overall-note">([^<]*)</) || [])[1] || ''));
 }
 
+  // ---- файла нет это ОТВЕТ, а не незнание
+  //
+  // Первая версия правки считала неизмеренным любой неуспех, и сайт без robots.txt терял 25
+  // заслуженных баллов: по стандарту отсутствие файла означает, что не запрещено ничего.
+  // Поймано на живом example.com сразу после выкладки: балл упал с 30 до 7.
+  for (const code of [404, 410]) {
+    const { s: s3, url: url3 } = await serve({ status: code });
+    let v3;
+    try { v3 = await checkVisibility(url3, { budgetMs: 8500, samplePages: 3, lang: 'ru' }); } finally { s3.close(); }
+    const a3 = v3.areas.find((a) => a.id === 'access');
+    is(`robots.txt ${code}: область измерена`, a3.measured, true);
+    is(`robots.txt ${code}: и оценена полностью`, a3.score, 25);
+    ok(`robots.txt ${code}: сказано, что файла нет`, /Файла robots\.txt на сайте нет/.test(a3.findings[0].text));
+    ok(`robots.txt ${code}: и что это значит «не запрещено ничего»`, /не запрещено ничего/.test(a3.findings[0].text));
+    ok(`robots.txt ${code}: не назвали это непрочитанным`, !a3.findings.some((f) => f.id === 'robots-unreadable'));
+    is(`robots.txt ${code}: балл это прямая сумма`, v3.score, v3.areas.reduce((t, a) => t + a.score, 0));
+  }
+
+  // ---- а отказ и сбой это по-прежнему незнание
+  for (const code of [401, 403, 429, 500]) {
+    const { s: s4, url: url4 } = await serve({ status: code });
+    let v4;
+    try { v4 = await checkVisibility(url4, { budgetMs: 8500, samplePages: 3, lang: 'ru' }); } finally { s4.close(); }
+    const a4 = v4.areas.find((a) => a.id === 'access');
+    is(`robots.txt ${code}: область не измерена`, a4.measured, false);
+    ok(`robots.txt ${code}: код назван в тексте`, new RegExp(`код ${code}`).test(a4.findings[0].text));
+  }
+
 if (bad) { console.error(`\n${bad} тест(ов) упало`); process.exit(1); }
-console.log('\nнепрочитанное не считается ни в плюс, ни в минус');
+console.log('\nнепрочитанное не считается ни в плюс, ни в минус, а отсутствующее это ответ');
