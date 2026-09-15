@@ -1,6 +1,6 @@
 {
   "name": "@operstack/audit",
-  "version": "0.21.0",
+  "version": "0.21.1",
   "description": "SEO, AEO and GEO audit generator: collect public signals from a site into audit.json, let an analyst or an agent fill the narrative, render the OperStack report as HTML and PDF.",
   "type": "module",
   "license": "MIT",
