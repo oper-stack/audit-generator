@@ -56,5 +56,13 @@ is('неизмеренное переводится', localiseBasisNote('not mea
 
 is('английский язык ничего не меняет', localiseChecks(all, 'en'), all);
 
+// Русские тексты не отправляют человека на английский сайт: подпись под баллом вела на
+// oper-stack.com, и русский читатель попадал на страницу и цены не на своём языке.
+{
+  const ru = readFileSync(new URL('./render.mjs', import.meta.url), 'utf8').split('\n')
+    .filter((l) => /[А-Яа-яЁё]/.test(l) && /oper-stack\.com/.test(l) && !l.trim().startsWith('*') && !l.trim().startsWith('//'));
+  is('в русских строках нет ссылок на английский сайт', ru, []);
+}
+
 if (bad) { console.error(`\n${bad} тест(ов) упало`); process.exit(1); }
 console.log(`\nперевод проверен на ${all.length} проверках, всё чисто`);
