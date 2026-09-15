@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /** Задания для ИИ-агента: полнота, язык, запрет на выдумки. */
-import { agentPrompt, agentPrompts, renderAgentPrompts } from './prompts.mjs';
+import { readFileSync } from 'node:fs';
+import { agentPrompt, agentPrompts, renderAgentPrompts, firstFixParts, FIRST_FIX_IDS } from './prompts.mjs';
 import { FIX_ACTIONS } from './fix.mjs';
 
 let bad = 0;
@@ -78,6 +79,34 @@ ok('шапка объясняет, что копировать задачу це
 ok('и предупреждает делать по одной', /по одной за раз/i.test(head));
 ok('и обещает, что код знать не нужно', /кода знать не нужно/i.test(head));
 ok('в файле нет пустых сдвоенных строк', !/\n\n\n/.test(head));
+
+// ---- первая правка на бесплатной странице тремя частями.
+// Список id берётся из исходника бесплатной проверки, а не из головы: новая находка без
+// сопоставления уронит этот тест, а не оставит покупателя без задачи молча.
+{
+  const src = readFileSync(new URL('./visibility.mjs', import.meta.url), 'utf8');
+  const ids = [...new Set([...src.matchAll(/id: '([a-z0-9-]+)', level: (?!'na')/g)].map((m) => m[1]))];
+  ok(`находок бесплатной проверки в исходнике больше десяти (${ids.length})`, ids.length > 10);
+  const missing = [];
+  for (const id of ids) for (const lang of ['ru', 'en']) {
+    const p = firstFixParts({ id, area: 'x', text: 'что-то измерено' }, { lang });
+    if (!p || !p.now || p.task.length < 30 || p.verify.length < 20 || /null|undefined/.test(JSON.stringify(p))) missing.push(`${id}/${lang}`);
+    else if (lang === 'en' && /[А-Яа-яЁё]/.test(p.task + p.verify + p.rule + Object.values(p.labels).join(''))) missing.push(`${id}/en: кириллица`);
+  }
+  is('у каждой находки бесплатной проверки есть три части на обоих языках', missing, []);
+  is('и в списке экспорта нет лишних id, которых проверка не выдаёт', FIRST_FIX_IDS.filter((id) => !ids.includes(id)), []);
+  is('неизвестная находка даёт null, а не чужое указание', firstFixParts({ id: 'что-то-новое', text: 'x' }, { lang: 'ru' }), null);
+  is('находка без текста даёт null', firstFixParts({ id: 'llms-missing', text: '' }, { lang: 'ru' }), null);
+  is('пустой вход даёт null', firstFixParts(null), null);
+  const p = firstFixParts({ id: 'robots-fetchers-blocked', area: 'Пускает ли роботов ИИ', text: 'Закрыты поисковые роботы ответных систем: OAI-SearchBot.' }, { lang: 'ru' });
+  is('«сейчас» это сам текст находки', p.now, 'Закрыты поисковые роботы ответных систем: OAI-SearchBot.');
+  ok('задача про открытие поисковых роботов', /Открой в robots\.txt/.test(p.task));
+  ok('подписи на русском', p.labels.now === 'Сейчас' && p.labels.task === 'Задача' && p.labels.verify === 'Как проверить');
+  ok('правило про выдумки на месте', /не выдумывай факты/.test(p.rule));
+  const e = firstFixParts({ id: 'llms-missing', text: 'No llms.txt.' }, { lang: 'en' });
+  ok('английские подписи', e.labels.now === 'Now' && e.labels.verify === 'How to check');
+  ok('незнакомый язык падает в английский', firstFixParts({ id: 'llms-missing', text: 'x' }, { lang: 'de' }).labels.now === 'Now');
+}
 
 if (bad) { console.error(`\n${bad} тест(ов) упало`); process.exit(1); }
 console.log('\nвсе тесты заданий прошли');
