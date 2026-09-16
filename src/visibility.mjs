@@ -84,10 +84,11 @@ export const MESSAGES = {
     ogMissing: 'No Open Graph tags on the homepage: shared links and previews render without a title or image.',
     thinPages: (thin, total) => `${thin} of ${total} sampled page(s) hold under 300 words. Engines rarely cite thin pages.`,
     avgWords: (avg) => `Sampled pages carry ${avg} words on average.`,
-    answerFirstMissing: (n, total) => `${n} of ${total} sampled page(s) open with an answer-first paragraph (20 to 90 words with a figure right after the H1). That paragraph is what gets quoted.`,
+    answerFirstMissing: (n, total, where) => `${n} of ${total} measured page(s) open with an answer-first paragraph (20 to 90 words with a figure right after the H1). That paragraph is what gets quoted. Missing on: ${where}.`,
     answerFirstOk: 'Every sampled page opens with an answer-first paragraph carrying a figure.',
     fewH2: (n) => `${n} sampled page(s) have fewer than three H2 sections.`,
-    noTables: 'No tables on the sampled pages. Tables are the second most quoted format after the first paragraph.',
+    noTables: 'No tables on the measured pages. Tables are the second most quoted format after the first paragraph.',
+    measured: (list) => `Measured on these pages: ${list}. Every content finding is a share of them, so a fix on one page moves the score by its share.`,
     homeOnly: 'Only the homepage could be read, so this area is measured on one page rather than several. A sitemap that answers would give a fuller picture.',
     datesMissing: (n) => `${n} sampled page(s) expose no publication or modified date. Engines prefer sources they can date.`,
     datesOk: 'Sampled pages expose publication dates.',
@@ -136,14 +137,15 @@ export const MESSAGES = {
       ? 'Единственная проверенная страница короче 300 слов. Короткие страницы цитируют редко.'
       : `Из ${total} ${ofPages(total)} ${thin} короче 300 слов. Короткие страницы цитируют редко.`),
     avgWords: (avg) => `На проверенных страницах в среднем ${avg} ${pl(avg, 'слово', 'слова', 'слов')}.`,
-    answerFirstMissing: (n, total) => (total === 1
-      ? 'Единственная проверенная страница не начинается с абзаца-ответа (20-90 слов с цифрой сразу после H1). Именно этот абзац попадает в цитату.'
-      : `Из ${total} ${ofPages(total)} с абзаца-ответа (20-90 слов с цифрой сразу после H1) ${n === 0 ? 'не начинается ни одна' : n === 1 ? 'начинается одна' : `начинаются ${n}`}. Именно этот абзац попадает в цитату.`),
+    answerFirstMissing: (n, total, where) => (total === 1
+      ? `Единственная проверенная страница не начинается с абзаца-ответа (20-90 слов с цифрой сразу после H1). Именно этот абзац попадает в цитату. Чинить здесь: ${where}.`
+      : `Из ${total} ${ofPages(total)} с абзаца-ответа (20-90 слов с цифрой сразу после H1) ${n === 0 ? 'не начинается ни одна' : n === 1 ? 'начинается одна' : `начинаются ${n}`}. Именно этот абзац попадает в цитату. Чинить здесь: ${where}.`),
     answerFirstOk: 'Каждая проверенная страница начинается с абзаца-ответа с цифрой.',
     fewH2: (n, total) => (total === 1
       ? 'У единственной проверенной страницы меньше трёх подзаголовков H2.'
       : `У ${n} из ${total} ${ofPages(total)} меньше трёх подзаголовков H2.`),
     noTables: 'На проверенных страницах нет таблиц. Таблица второй по цитируемости формат после первого абзаца.',
+    measured: (list) => `Мерили по этим страницам: ${list}. Каждая находка по содержанию считается долей от них, поэтому правка на одной странице двигает балл на свою долю.`,
     homeOnly: 'Прочитать удалось только главную, поэтому эта область измерена по одной странице, а не по нескольким. Отвечающая карта сайта дала бы полную картину.',
     datesMissing: (n, total) => (total === 1
       ? 'Единственная проверенная страница не показывает дату публикации или изменения. Системы предпочитают источники, которые можно датировать.'
@@ -455,7 +457,38 @@ export async function checkVisibility(input, { budgetMs = 8500, lang = 'en', sam
   let wantedPages = 0;
   if (left() > 2000 && sitemap.pages.length) {
     const norm = (u) => u.replace(/\/$/, '').toLowerCase();
-    const picks = sitemap.pages.filter((p) => norm(p) !== norm(home.url) && p.startsWith(origin)).sort((a, b) => b.length - a.length).slice(0, Math.max(12, samplePages * 4)).filter((_, i) => i % 4 === 0).slice(0, samplePages);
+    /*
+     * Какие страницы берём в выборку.
+     *
+     * До 16.09.2026 здесь стояла сортировка по длине адреса по убыванию, то есть наверх
+     * поднимались самые глубокие страницы: расшифровки, архивы, служебные разделы. Живой
+     * пользователь увидел это на своём сайте: в выборку попали расшифровки на семь тысяч слов.
+     * Он чинил витрину, а балл почти не двигался, потому что каждая находка по содержанию
+     * считается долей от всех измеренных страниц, и одна поправленная главная из четырёх даёт
+     * четверть балла.
+     *
+     * Теперь берём страницы поближе к корню и по одной из каждого раздела: это то, ради чего
+     * сайт сделан, и то, что человек станет чинить. Порядок строго определён, чтобы два прогона
+     * по одному сайту брали одни и те же страницы и балл не гулял.
+     */
+    const depth = (u) => { try { return new URL(u).pathname.replace(/\/$/, '').split('/').filter(Boolean).length; } catch { return 99; } };
+    const section = (u) => { try { return new URL(u).pathname.split('/').filter(Boolean)[0] || ''; } catch { return ''; } };
+    const candidates = sitemap.pages.filter((p) => norm(p) !== norm(home.url) && p.startsWith(origin));
+    const byDepth = [...candidates].sort((a, b) => depth(a) - depth(b) || a.length - b.length || (a < b ? -1 : 1));
+    const picks = [];
+    const usedSections = new Set();
+    for (const p of byDepth) {
+      if (picks.length >= samplePages) break;
+      const sec = section(p);
+      if (usedSections.has(sec)) continue;
+      usedSections.add(sec);
+      picks.push(p);
+    }
+    // Разделов может оказаться меньше, чем нужно страниц: добираем ближайшими к корню.
+    for (const p of byDepth) {
+      if (picks.length >= samplePages) break;
+      if (!picks.includes(p)) picks.push(p);
+    }
     const read = async (list) => Promise.all(list.map((p) => get(p, { timeout: Math.min(4000, left() - 300) })));
     let rs = await read(picks);
     // Одна повторная попытка по тем, что не ответили: страницы маленькие, а разница в балле
@@ -574,7 +607,16 @@ export async function checkVisibility(input, { budgetMs = 8500, lang = 'en', sam
   if (homePage.ogTitle) entity += 2; else entityFindings.push({ id: 'og-missing', level: 'warn', text: T.ogMissing });
 
   // Area 4: answer-first content (25)
-  const contentPages = sampled.length ? sampled : [homePage];
+  /*
+   * Главная считается наравне с остальными.
+   *
+   * До 16.09.2026 здесь стояло `sampled.length ? sampled : [homePage]`, то есть главную мы
+   * смотрели только когда больше ничего не нашлось. На любом сайте с картой сайта самая важная
+   * страница выпадала из оценки содержания целиком: ни таблицы, ни абзац-ответ, ни объём.
+   * Живой пользователь добавил таблицу на главную, балл не сдвинулся, и он не понял почему.
+   * Понять было нельзя: мы туда не смотрели.
+   */
+  const contentPages = [homePage, ...sampled];
   /* Say so. A score built from one page is not the same measurement as one built from four. */
   const homeOnly = !sampled.length;
   const thin = contentPages.filter((p) => p.words < 300).length;
@@ -585,11 +627,18 @@ export async function checkVisibility(input, { budgetMs = 8500, lang = 'en', sam
   content += Math.round(10 * (1 - thin / contentPages.length));
   if (thin) contentFindings.push({ id: 'thin-pages', level: thin === contentPages.length ? 'fail' : 'warn', text: T.thinPages(thin, contentPages.length) }); else contentFindings.push({ level: 'pass', text: T.avgWords(Math.round(contentPages.reduce((a, p) => a + p.words, 0) / contentPages.length)) });
   content += Math.round(8 * (answerFirst / contentPages.length));
-  if (answerFirst < contentPages.length) contentFindings.push({ id: 'answer-first-missing', level: answerFirst ? 'warn' : 'fail', text: T.answerFirstMissing(answerFirst, contentPages.length) }); else contentFindings.push({ level: 'pass', text: T.answerFirstOk });
+  // Адрес страницы в находке это разница между «полдня искали» и «поправил за минуту»: живой
+  // пользователь 16.09.2026 потратил полдня, чтобы понять, какая именно страница виновата.
+  const shortPath = (u) => { try { const x = new URL(u); return (x.pathname === '/' ? '/' : x.pathname.replace(/\/$/, '')); } catch { return u; } };
+  const pageList = (list) => list.map(shortPath).join(', ');
+  if (answerFirst < contentPages.length) contentFindings.push({ id: 'answer-first-missing', level: answerFirst ? 'warn' : 'fail', text: T.answerFirstMissing(answerFirst, contentPages.length, pageList(contentPages.filter((p) => !p.answerFirst).map((p) => p.url))) }); else contentFindings.push({ level: 'pass', text: T.answerFirstOk });
   content += Math.round(4 * (structured / contentPages.length)) + Math.round(3 * (withTables / contentPages.length));
   if (structured < contentPages.length) contentFindings.push({ id: 'few-h2', level: 'warn', text: T.fewH2(contentPages.length - structured, contentPages.length) });
   if (!withTables) contentFindings.push({ id: 'no-tables', level: 'warn', text: T.noTables });
   if (homeOnly) contentFindings.push({ level: 'warn', text: T.homeOnly });
+  // Какие именно страницы мы мерили. Без этой строки человек чинит витрину, видит движение балла
+  // на один пункт и не понимает, почему: находки считаются долей от всех измеренных страниц.
+  contentFindings.push({ level: 'pass', text: T.measured(pageList(contentPages.map((p) => p.url))) });
 
   // Area 5: freshness and sources (15)
   const dated = contentPages.filter((p) => p.datePublished || p.dateModified).length;
