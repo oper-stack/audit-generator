@@ -380,7 +380,32 @@ export async function checkVisibility(input, { budgetMs = 8500, lang = 'en', sam
   const url = normaliseInput(input);
   if (!url) return { ok: false, error: T.badInput };
   const origin = new URL(url).origin; const host = new URL(url).host;
-  const [home, robotsRes, llmsRes] = await Promise.all([get(url, { timeout: Math.min(6000, left() - 300) }), get(`${origin}/robots.txt`, { timeout: Math.min(4000, left() - 300) }), get(`${origin}/llms.txt`, { timeout: Math.min(4000, left() - 300) })]);
+  /*
+   * Служебные файлы читаются с одним повтором, и это не украшение.
+   *
+   * Один ответ решает судьбу целой области: robots.txt стоит 25 очков, llms.txt 15. До 16.09.2026
+   * повтора не было, и одна неудачная выборка меняла балл на пятнадцать пунктов. 15.09.2026
+   * avtokomissar-app.ru получил 52 на русском сайте и 67 на английском с разницей в две минуты,
+   * при том что движок, версия и параметры у обоих одинаковые. Владельцу сайта такое расхождение
+   * читается как «вы врёте», и он прав.
+   *
+   * Повторяем только неопределённый ответ: таймаут, отказ защиты, ошибку сервера. Честные 404 и
+   * 410 значат, что файла правда нет, их переспрашивать незачем и это удвоило бы запросы почти
+   * на каждом сайте.
+   */
+  const settled = (r) => r.ok || r.status === 404 || r.status === 410;
+  const once = (u, ms) => get(u, { timeout: Math.min(ms, left() - 300) });
+  const twice = async (u, ms) => {
+    const first = await once(u, ms);
+    if (settled(first) || left() < 1200) return first;
+    const again = await once(u, Math.min(ms, 2500));
+    return settled(again) ? again : first;
+  };
+  const [home, robotsRes, llmsRes] = await Promise.all([
+    once(url, 6000),
+    twice(`${origin}/robots.txt`, 4000),
+    twice(`${origin}/llms.txt`, 4000),
+  ]);
   if (!home.ok || !/html/i.test(home.type)) {
     // Код 401/403/405/429 это бот-стена, а не сломанный сайт, и это находка сама по себе: та же
     // стена, что развернула эту проверку, разворачивает и роботов ответных систем.
