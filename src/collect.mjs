@@ -52,6 +52,13 @@ async function follow(url, max = 5) {
 
 const row = (id, group, label, status, value, comment = '') => ({ id, group, label, status, value, comment });
 
+/**
+ * Чем в тексте называют источник цифры, по-английски и по-русски. Список слово в слово совпадает
+ * с SOURCE_RE в visibility.mjs: два движка должны считать одно и то же, иначе балл в бесплатной
+ * проверке и в платном отчёте разойдётся на ровном месте.
+ */
+const SOURCE_RE = /(?<!\p{L})(according to|source:|sources:|data from|reported by|published by|registry|statistics office|central bank|по данным|источник:|источники:|согласно|по информации|по сведениям|росстат|центробанк|банк россии|росреестр|минфин|минэкономразвития)(?!\p{L})/giu;
+
 function analysePage(url, html) {
   const root = parse(html, { blockTextElements: { script: true, style: true, noscript: true } });
   const attr = (sel, a) => root.querySelector(sel)?.getAttribute(a) ?? '';
@@ -147,7 +154,13 @@ function analysePage(url, html) {
   const tables = (bodyHtml.match(/<table[\s>]/gi) || []).length;
   // A source is named either in words, or the way careful writing actually does it: a link to
   // somebody else's site sitting in the same paragraph as the figure it backs.
-  const sourcePhrases = (text.match(/\b(according to|source:|sources:|data from|reported by|published by|registry|statistics office|central bank)\b/gi) || []).length;
+  // Слова, которыми называют источник цифры. Список и границы слова те же, что в движке
+  // бесплатной проверки (visibility.mjs, SOURCE_RE): до 16.09.2026 здесь были только английские
+  // выражения, и русский сайт, честно написавший «по данным Росстата», получал ноль. Живой
+  // пользователь сказал об этом прямо: на русском сайте эти баллы недостижимы.
+  // Обычная граница слова \b для кириллицы не работает, она построена на латинице, поэтому
+  // границы заданы через отсутствие буквы рядом.
+  const sourcePhrases = (text.match(SOURCE_RE) || []).length;
   const ownHostname = (() => { try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return ''; } })();
   // Абзацы, в которых вообще есть цифра. Без этого счётчика «цифры без источника» вменяется
   // странице, где цифр нет ни одной, например политике конфиденциальности.
