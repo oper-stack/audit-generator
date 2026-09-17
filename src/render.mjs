@@ -46,6 +46,8 @@ const LABELS = {
       return `${where}${read}${sumUp}Running the check again can move it by a point or two: a check that answers in time on one run may not on the next, and this score never counts against a site what it could not read.`;
     },
     secondMeasure: 'A second, separate measurement: how this report scores its own checks',
+    ofHundred: 'of 100', ofHundredShort: 'OF 100', aiVisibility: 'AI visibility', seoBasics: 'SEO basics',
+    enginesHead: 'Readiness by engine', madeOf: 'What the score is made of', worth: 'worth', blockedIn: 'Blocked', colTables: 'Tables', colLinks: 'Links',
     secOverview: 'Site overview', overviewEyebrow: '02 · Overview', whatSiteIs: 'What the site is', parameter: 'Parameter', value: 'Value', pagesSampled: 'Pages sampled', colUrl: 'URL', colTitle: 'Title', colWords: 'Words',
     secCritical: 'Critical issues', criticalEyebrow: '03 · P0', criticalTitle: 'Critical issues, fix first', whatItCosts: 'What it costs', theFix: 'Fix', noBody: 'This issue has no description in the audit file.', noCritical: 'No critical defects were found in the public signals.',
     secTechnical: 'Technical SEO', technicalEyebrow: '04 · Technical', technicalTitle: 'Technical and on-page checklist', colCheck: 'Check', colStatus: 'Status', colFinding: 'Finding',
@@ -86,6 +88,8 @@ const LABELS = {
       return `${where}${read}${sumUp}Повторная проверка может дать на пункт-другой иначе: проверка, которая успела ответить в один прогон, может не успеть в следующий, а балл никогда не засчитывает сайту в минус то, что не удалось прочитать.`;
     },
     secondMeasure: 'Второе, отдельное измерение: как этот отчёт оценивает собственные проверки',
+    ofHundred: 'из 100', ofHundredShort: 'ИЗ 100', aiVisibility: 'ИИ-видимость', seoBasics: 'Основы SEO',
+    enginesHead: 'Готовность по движкам', madeOf: 'Из чего сложился балл', worth: 'вес', blockedIn: 'Закрыты', colTables: 'Таблиц', colLinks: 'Ссылок',
     secOverview: 'О сайте', overviewEyebrow: '02 · Обзор', whatSiteIs: 'Что это за сайт', parameter: 'Параметр', value: 'Значение', pagesSampled: 'Проверенные страницы', colUrl: 'Адрес', colTitle: 'Заголовок', colWords: 'Слов',
     secCritical: 'Критичное', criticalEyebrow: '03 · Срочно', criticalTitle: 'Что чинить первым', whatItCosts: 'Чем это грозит', theFix: 'Как чинится', noBody: 'У этой проблемы нет описания в файле аудита.', noCritical: 'Критичных дефектов в публичных сигналах не найдено.',
     secTechnical: 'Техническое SEO', technicalEyebrow: '04 · Техника', technicalTitle: 'Техническая проверка и страницы', colCheck: 'Проверка', colStatus: 'Статус', colFinding: 'Что нашли',
@@ -194,13 +198,52 @@ function css() {
   table.areas td { text-align: center; padding: 2.5mm; border: 1px solid var(--rule); font-family: "Fraunces", Georgia, serif; font-size: 13pt; font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; }
   table.areas td span { font-family: inherit; font-size: 9pt; color: var(--muted); font-weight: 400; }
   h3.second-measure { font-size: 11pt; margin: 7mm 0 3mm; }
-  .overall { display: flex; align-items: center; gap: 6mm; border: 1px solid var(--rule); border-radius: 5px; padding: 5mm 6mm; background: #f4f8f8; margin: 5mm 0 4mm; }
-  .overall-num { font-family: "Fraunces", Georgia, serif; font-size: 44pt; font-weight: 600; line-height: 1; color: var(--accent); font-variant-numeric: tabular-nums; }
-  .overall-num span { font-size: 18pt; color: var(--muted); }
-  .overall-num.low { color: var(--danger); } .overall-num.mid { color: var(--warn); } .overall-num.ok { color: var(--ok); }
-  .overall-label { font-size: 8pt; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
-  .overall-grade { font-family: "Fraunces", Georgia, serif; font-size: 15pt; font-weight: 600; margin: 1mm 0 1.5mm; }
-  .overall-note { font-size: 8.5pt; color: var(--muted); line-height: 1.45; }
+  /*
+   * Сводка: кольцо, пилюли, полосы. Те же пороги цвета, что на странице результата: 80 и 45.
+   * Печать на бумагу, поэтому все размеры в миллиметрах и пунктах, а не в пикселях.
+   */
+  .overall { display: flex; align-items: center; gap: 7mm; border: 1px solid var(--rule); border-radius: 5px; padding: 4mm 6mm; background: #fafbfb; margin: 5mm 0 4mm; }
+  .ring { flex: none; color: var(--ok); }
+  .ring.ring-fair { color: #d9a030; } .ring.ring-poor { color: #d2694f; } .ring.ring-na { color: var(--muted); }
+  .ring-num { font-family: "Fraunces", Georgia, serif; font-size: 42px; font-weight: 600; fill: var(--ink); }
+  .ring-of { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 11px; letter-spacing: 1px; fill: var(--muted); }
+  .overall-side { min-width: 0; }
+  .pills { display: flex; flex-wrap: wrap; gap: 2mm; margin: 0 0 2.5mm; }
+  .pill { display: inline-flex; align-items: baseline; gap: 1.6mm; padding: 1.4mm 3mm; border-radius: 99mm; background: var(--accent-soft); font-size: 7.5pt; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  .pill-fair { background: #fbf0d5; } .pill-poor { background: #f9e1db; } .pill-na { background: #eceef0; }
+  .pill b { font-family: "Fraunces", Georgia, serif; font-size: 12pt; letter-spacing: 0; color: var(--ok); }
+  .pill-fair b { color: #9a6700; } .pill-poor b { color: #b3261e; } .pill-na b { color: var(--muted); }
+  .pill-n { color: var(--ink-2); }
+  .overall-grade { font-family: "Fraunces", Georgia, serif; font-size: 14pt; font-weight: 600; margin: 0 0 1.5mm; }
+  .overall-note { font-size: 8.5pt; color: var(--muted); line-height: 1.45; margin: 0; }
+
+  h3.engines-head, h3.areas-head { font-size: 11pt; margin: 6mm 0 2.5mm; }
+  .engines { display: grid; grid-template-columns: repeat(5, 1fr); gap: 2.2mm; }
+  .eng { border: 1px solid var(--rule); border-radius: 4px; padding: 2.4mm 2.6mm; background: #fafbfb; }
+  .eng p { margin: 0; }
+  .eng-name { font-size: 8pt; font-weight: 600; }
+  .eng-num { font-family: "Fraunces", Georgia, serif; font-size: 16pt; line-height: 1; color: var(--ok); margin: 0.6mm 0 1.4mm; font-variant-numeric: tabular-nums; }
+  .eng-fair .eng-num { color: #9a6700; } .eng-poor .eng-num { color: #b3261e; } .eng-na .eng-num { color: var(--muted); }
+  .eng-how { font-size: 6.2pt; color: var(--muted); line-height: 1.3; margin-top: 1.4mm; }
+  .eng-poor .eng-how { color: #b3261e; }
+
+  .pbar { height: 1.3mm; border-radius: 1mm; background: #ecefee; overflow: hidden; }
+  .pbar i { display: block; height: 100%; background: var(--ok); }
+  .eng-fair .pbar i, .ar-fair .pbar i { background: #e8b84a; }
+  .eng-poor .pbar i, .ar-poor .pbar i { background: #d2694f; }
+  .eng-na .pbar i, .ar-na .pbar i { background: var(--muted); }
+
+  .areas-bars { margin-bottom: 2mm; }
+  .ar { padding: 2mm 0; border-top: 1px solid var(--rule); }
+  .ar:first-child { border-top: 0; padding-top: 0.5mm; }
+  .ar-h { display: grid; grid-template-columns: 1fr auto auto; gap: 3mm; align-items: baseline; margin-bottom: 1.4mm; }
+  .ar-n { font-size: 9pt; font-weight: 600; }
+  .ar-w { font-size: 7pt; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
+  .ar-v { font-family: "Fraunces", Georgia, serif; font-size: 13pt; color: var(--ok); font-variant-numeric: tabular-nums; min-width: 14mm; text-align: right; }
+  .ar-fair .ar-v { color: #9a6700; } .ar-poor .ar-v { color: #b3261e; }
+  .ar-v span { font-size: 8pt; color: var(--muted); }
+  .ar-v .na { font-family: inherit; font-size: 8pt; color: var(--muted); }
+
   .scorecard { display: grid; grid-template-columns: 1fr 1fr; gap: 3mm; margin: 5mm 0 6mm; }
   .score { border: 1px solid var(--rule); border-radius: 4px; padding: 3.5mm 4mm; background: #fafbfb; }
   .score .label { font-size: 8pt; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-bottom: 1.5mm; }
@@ -264,12 +307,44 @@ export function toHtml(audit, brand = null) {
    * заголовком не нужно и не получится, и об этом сказано словами.
    */
   const head = overallSummary(a.overall, { lang: a.meta?.lang === 'ru' ? 'ru' : 'en' });
+  /*
+   * Сводка на языке, которым с 17.09.2026 говорит страница результата: кольцо со шкалой, две
+   * пилюли с числами, полосы по областям, цвет по значению. До этого здесь были плоские числа в
+   * таблице, и владелец сказал прямо, что бесплатная страница выглядит лучше платного отчёта.
+   *
+   * Цвет считается одним правилом на весь отчёт, теми же порогами, что у буквы: 80 и 45.
+   */
+  const tone = (pct) => (pct === null ? 'na' : pct >= 80 ? 'good' : pct >= 45 ? 'fair' : 'poor');
+  const RING_R = 58;
+  const RING_C = 2 * Math.PI * RING_R;
+  const ring = (score) => `<svg class="ring ring-${tone(score)}" viewBox="0 0 148 148" width="118" height="118" role="img" aria-label="${score} ${esc(L.ofHundred || 'of 100')}">
+      <circle cx="74" cy="74" r="${RING_R}" fill="none" stroke="#ECE9E2" stroke-width="12"/>
+      <circle cx="74" cy="74" r="${RING_R}" fill="none" stroke="currentColor" stroke-width="12" stroke-linecap="round"
+              stroke-dasharray="${RING_C.toFixed(1)}" stroke-dashoffset="${(RING_C * (1 - score / 100)).toFixed(1)}" transform="rotate(-90 74 74)"/>
+      <text class="ring-num" x="74" y="80" text-anchor="middle">${score}</text>
+      <text class="ring-of" x="74" y="101" text-anchor="middle">${esc(L.ofHundredShort || 'OF 100')}</text>
+    </svg>`;
+  const grade100 = (n) => (n >= 80 ? 'A' : n >= 65 ? 'B' : n >= 45 ? 'C' : n >= 25 ? 'D' : 'E');
+  const pill = (label, score) => `<span class="pill pill-${tone(score)}"><span class="pill-k">${esc(label)}</span> <b>${grade100(score)}</b> <span class="pill-n">${score}/100</span></span>`;
+  const seo = a.overall && a.overall.seo && typeof a.overall.seo.score === 'number' ? a.overall.seo : null;
+  const engines = Array.isArray(a.overall && a.overall.engines) ? a.overall.engines : [];
+
   const overallBlock = !head ? '' : `<div class="overall">
-    <div class="overall-num ${scoreClass(Math.round(head.score / 10))}">${head.score}<span>/100</span></div>
-    <div class="overall-side"><div class="overall-label">${esc(head.label)}</div>
-      <div class="overall-grade">${esc(head.grade)}</div>
-      <div class="overall-note">${esc(head.note)}</div></div></div>`
-    + (head.areas.length ? `<table class="areas"><tr>${head.areas.map((x) => `<th>${esc(x.label)}</th>`).join('')}</tr><tr>${head.areas.map((x) => `<td>${x.score === null ? `<span>${esc(head.notMeasured)}</span>` : `${x.score}<span>/${x.max}</span>`}</td>`).join('')}</tr></table>` : '');
+      ${ring(head.score)}
+      <div class="overall-side">
+        <p class="pills">${pill(L.aiVisibility || 'AI visibility', head.score)}${seo ? pill(L.seoBasics || 'SEO basics', seo.score) : ''}</p>
+        <div class="overall-grade">${esc(head.grade)}</div>
+        <p class="overall-note">${esc(head.note)}</p>
+      </div>
+    </div>`
+    + (engines.length ? `<h3 class="engines-head">${esc(L.enginesHead || 'Readiness by engine')}</h3><div class="engines">${engines.map((e) => {
+        const v = e.score === null ? 0 : e.score;
+        return `<div class="eng eng-${tone(e.score)}"><p class="eng-name">${esc(e.label)}</p><p class="eng-num">${e.score === null ? '&middot;' : e.score}</p><div class="pbar"><i style="width:${v}%"></i></div><p class="eng-how">${esc(e.blocked && e.blocked.length ? `${L.blockedIn || 'Blocked'}: ${e.blocked.join(', ')}` : e.how)}</p></div>`;
+      }).join('')}</div>` : '')
+    + (head.areas.length ? `<h3 class="areas-head">${esc(L.madeOf || 'What the score is made of')}</h3><div class="areas-bars">${head.areas.map((x) => {
+        const pct = x.score === null || !x.max ? null : Math.round((x.score / x.max) * 100);
+        return `<div class="ar ar-${tone(pct)}"><div class="ar-h"><span class="ar-n">${esc(x.label)}</span><span class="ar-w">${esc((L.worth || 'worth') + ' ' + x.max)}</span><span class="ar-v">${x.score === null ? `<span class="na">${esc(head.notMeasured)}</span>` : `${x.score}<span>/${x.max}</span>`}</span></div><div class="pbar"><i style="width:${pct === null ? 0 : pct}%"></i></div></div>`;
+      }).join('')}</div>` : '');
   const scoreCards = Object.entries(measured).map(([label, n]) => {
     const basis = scoreBasis[label] || {};
     const shown = (L.areas && L.areas[label]) || label;
@@ -290,17 +365,56 @@ export function toHtml(audit, brand = null) {
     <dl class="cover-meta"><div><dt>${L.auditSubject}</dt><dd>${t(a.client.name)}</dd></div><div><dt>${L.reportDate}</dt><dd>${esc(a.client.reportDate)}</dd></div><div><dt>${L.auditType}</dt><dd>${esc(a.meta.auditType)}</dd></div><div><dt>${L.preparedBy}</dt><dd>${esc(preparedBy)}</dd></div></dl></div>
     ${toolLine}</div></div>`);
   n++;
-  pages.push(`<div class="page">${header(a, L.secSummary, L)}<div class="eyebrow">${L.summaryEyebrow}</div><h2>${L.secSummary}</h2><p class="lead">${t(a.summary.lead)}</p>${overallBlock}<h3 class="second-measure">${L.secondMeasure}</h3><div class="scorecard">${scoreCards}</div><p class="scorecard-foot">${L.scorecardFoot}</p><div class="verdict"><p><strong>${L.keyTakeaway}</strong> ${t(a.summary.verdict)}</p></div><h3>${L.threePriorities}</h3>${olist(a.summary.priorities)}${footer(a, n++, preparedBy)}</div>`);
-  pages.push(`<div class="page">${header(a, L.secOverview, L)}<div class="eyebrow">${L.overviewEyebrow}</div><h2>${L.whatSiteIs}</h2><table><tr><th>${L.parameter}</th><th>${L.value}</th></tr>${(a.overview.rows || []).map(([k, v]) => `<tr><td>${t(k)}</td><td>${t(v)}</td></tr>`).join('')}</table><p>${t(a.overview.note)}</p><h3>${L.pagesSampled}</h3><table><tr><th>${L.colUrl}</th><th>${L.colTitle}</th><th>${L.colWords}</th><th>H1</th><th>Alt</th></tr>${(a.sample || []).filter((p) => p.title !== undefined).slice(0, 14).map((p) => `<tr><td><code>${esc(new URL(p.url).pathname)}</code></td><td>${esc(p.title)}</td><td>${p.words}</td><td>${p.h1Count}</td><td>${p.images ? `${p.images - p.imagesNoAlt}/${p.images}` : '·'}</td></tr>`).join('')}</table>${footer(a, n++, preparedBy)}</div>`);
+  /*
+   * Сводка занимает ДВА листа намеренно, а не один с переливом.
+   *
+   * Раньше всё лежало на одной странице, не влезало, и хвост уезжал на свой лист: три строчки
+   * приоритетов и восемьдесят процентов белого. Таких листов в отчёте было три из двенадцати, и
+   * выглядело это как недоделанная работа. Теперь первый лист про балл и из чего он сложился,
+   * второй про проверки самого отчёта и что делать. Оба полные.
+   */
+  pages.push(`<div class="page">${header(a, L.secSummary, L)}<div class="eyebrow">${L.summaryEyebrow}</div><h2>${L.secSummary}</h2><p class="lead">${t(a.summary.lead)}</p>${overallBlock}${footer(a, n++, preparedBy)}</div>`);
+  pages.push(`<div class="page">${header(a, L.secSummary, L)}<div class="eyebrow">${L.summaryEyebrow}</div><h2>${L.secondMeasure}</h2><div class="scorecard">${scoreCards}</div><p class="scorecard-foot">${L.scorecardFoot}</p><div class="verdict"><p><strong>${L.keyTakeaway}</strong> ${t(a.summary.verdict)}</p></div><h3>${L.threePriorities}</h3>${olist(a.summary.priorities)}${footer(a, n++, preparedBy)}</div>`);
+  pages.push(`<div class="page">${header(a, L.secOverview, L)}<div class="eyebrow">${L.overviewEyebrow}</div><h2>${L.whatSiteIs}</h2><table><tr><th>${L.parameter}</th><th>${L.value}</th></tr>${(a.overview.rows || []).map(([k, v]) => `<tr><td>${t(k)}</td><td>${t(v)}</td></tr>`).join('')}</table><p>${t(a.overview.note)}</p><h3>${L.pagesSampled}</h3><table class="pages"><tr><th>${L.colUrl}</th><th>${L.colTitle}</th><th>${L.colWords}</th><th>H2</th><th>${L.colTables || 'Tables'}</th><th>${L.colLinks || 'Links'}</th><th>Alt</th></tr>${(a.sample || []).filter((p) => p.title !== undefined).slice(0, 14).map((p) => `<tr><td><code>${esc(new URL(p.url).pathname)}</code></td><td>${esc(p.title)}</td><td>${p.words}</td><td>${p.h2Count ?? '·'}</td><td>${p.tables ?? '·'}</td><td>${p.linkCount ?? '·'}</td><td>${p.images ? `${p.images - p.imagesNoAlt}/${p.images}` : '·'}</td></tr>`).join('')}</table>${footer(a, n++, preparedBy)}</div>`);
   const cardBody = (c) => [
     c.text ? `<p>${t(c.text)}</p>` : '',
     c.cost ? `<p><span class="card-tag">${L.whatItCosts}</span>${t(c.cost)}</p>` : '',
     c.fix ? `<p><span class="card-tag">${L.theFix}</span>${t(c.fix)}</p>` : '',
   ].join('') || '<p class="card-empty">${L.noBody}</p>';
   const cards = (a.critical || []).map((c, i) => `<div class="card ${c.level === 'warn' ? 'warn' : ''}"><h4>${i + 1}. ${t(c.title)}</h4>${cardBody(c)}</div>`).join('') || `<p>${L.noCritical}</p>`;
-  pages.push(`<div class="page">${header(a, L.secCritical, L)}<div class="eyebrow">${L.criticalEyebrow}</div><h2>${L.criticalTitle}</h2><div class="cards">${cards}</div>${footer(a, n++, preparedBy)}</div>`);
-  const techRows = [...checksBy('technical'), ...checksBy('onpage')].map((c) => `<tr><td>${esc(c.label)}</td>${statusCell(c.status, L)}<td>${esc(c.value)}${c.comment ? `<br><span style="color:var(--muted)">${esc(c.comment)}</span>` : ''}</td></tr>`).join('');
-  pages.push(`<div class="page">${header(a, L.secTechnical, L)}<div class="eyebrow">${L.technicalEyebrow}</div><h2>${L.technicalTitle}</h2><table><tr><th>${L.colCheck}</th><th>${L.colStatus}</th><th>${L.colFinding}</th></tr>${techRows}</table>${footer(a, n++, preparedBy)}</div>`);
+  /*
+   * Лист «что чинить первым» печатается, только когда есть что чинить. Раньше на чистом сайте
+   * он занимал целую страницу одной строкой «критичных дефектов не найдено», а это в отчёте за
+   * деньги выглядит как пустой лист. Сам факт не пропадает: он сказан в сводке.
+   */
+  if ((a.critical || []).length) {
+    pages.push(`<div class="page">${header(a, L.secCritical, L)}<div class="eyebrow">${L.criticalEyebrow}</div><h2>${L.criticalTitle}</h2><div class="cards">${cards}</div>${footer(a, n++, preparedBy)}</div>`);
+  }
+  /*
+   * Длинная таблица режется на листы по счёту строк, а не переливается сама.
+   *
+   * Перелив оставлял лист с четырьмя строками и восемьюдесятью процентами белого: в отчёте за
+   * деньги это читается как недоделанная работа. Порог взят по факту: строка занимает примерно
+   * 11 мм, на лист влезает около восемнадцати вместе с заголовком. Строка с пояснением выше,
+   * поэтому считаем её за полторы.
+   */
+  const techChecks = [...checksBy('technical'), ...checksBy('onpage')];
+  const techHead = `<tr><th>${L.colCheck}</th><th>${L.colStatus}</th><th>${L.colFinding}</th></tr>`;
+  const rowHtml = (c) => `<tr><td>${esc(c.label)}</td>${statusCell(c.status, L)}<td>${esc(c.value)}${c.comment ? `<br><span style="color:var(--muted)">${esc(c.comment)}</span>` : ''}</td></tr>`;
+  const TECH_UNITS_PER_PAGE = 17;
+  const techPages = [];
+  let bucket = [];
+  let units = 0;
+  for (const c of techChecks) {
+    const cost = c.comment ? 1.5 : 1;
+    if (units + cost > TECH_UNITS_PER_PAGE && bucket.length) { techPages.push(bucket); bucket = []; units = 0; }
+    bucket.push(c); units += cost;
+  }
+  if (bucket.length) techPages.push(bucket);
+  techPages.forEach((chunk, i) => {
+    const title = techPages.length > 1 ? `${L.technicalTitle} (${i + 1}/${techPages.length})` : L.technicalTitle;
+    pages.push(`<div class="page">${header(a, L.secTechnical, L)}<div class="eyebrow">${L.technicalEyebrow}</div><h2>${esc(title)}</h2><table>${techHead}${chunk.map(rowHtml).join('')}</table>${footer(a, n++, preparedBy)}</div>`);
+  });
   pages.push(`<div class="page">${header(a, L.secContent, L)}<div class="eyebrow">${L.contentEyebrow}</div><h2>${L.contentTitle}</h2><div class="two-col"><div><h3>${L.strengths}</h3>${list(a.content.strengths)}</div><div><h3>${L.weaknesses}</h3>${list(a.content.weaknesses)}</div></div><h3>${L.gaps}</h3>${list(a.content.gaps)}${checksBy('content').length ? `<table><tr><th>${L.colCheck}</th><th>${L.colStatus}</th><th>${L.colFinding}</th></tr>${checksBy('content').map((c) => `<tr><td>${esc(c.label)}</td>${statusCell(c.status, L)}<td>${esc(c.value)}</td></tr>`).join('')}</table>` : ''}${footer(a, n++, preparedBy)}</div>`);
   const geoRows = [...checksBy('aeo'), ...checksBy('geo')].map((c) => `<tr><td>${esc(c.label)}</td>${statusCell(c.status, L)}<td>${esc(c.value)}${c.comment ? `. ${esc(c.comment.charAt(0).toUpperCase() + c.comment.slice(1))}` : ''}</td></tr>`).join('') + (a.geo.rows || []).map(([k, s, d]) => `<tr><td>${t(k)}</td><td>${t(s)}</td><td>${t(d)}</td></tr>`).join('');
   pages.push(`<div class="page">${header(a, L.secAeo, L)}<div class="eyebrow">${L.aeoEyebrow}</div><h2>${L.aeoTitle}</h2><p class="lead">Whether the site's answers can be lifted into "People also ask", AI overviews, ChatGPT and Perplexity.</p><div class="two-col"><div><h3>${L.aeoWorks}</h3>${list(a.aeo.works)}</div><div><h3>${L.aeoBlocks}</h3>${list(a.aeo.blocks)}</div></div><div class="callout"><p><strong>${L.recommendation}</strong> ${t(a.aeo.recommendation)}</p></div><h2>${L.geoTitle}</h2><table><tr><th>${L.colSignal}</th><th>${L.colStatus}</th><th>${L.colDetail}</th></tr>${geoRows}</table><div class="callout"><p>${t(a.geo.callout)}</p></div>${footer(a, n++, preparedBy)}</div>`);

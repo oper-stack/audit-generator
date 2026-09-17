@@ -74,7 +74,9 @@ if (!dnsOk) {
   fixture.meta.lang = 'ru';
   fixture.overall = { score: v.score, grade: v.grade, areas: v.areas, source: 'visibility', basis: { pages: 1, sitemapRead: false, sitemapUnchecked: false } };
   const html = toHtml(fixture, null);
-  ok('в таблице областей стоит слово, а не null', /<td><span>не измерялось<\/span><\/td>/.test(html) && !/null/.test(html.match(/<table class="areas">[\s\S]*?<\/table>/)[0]));
+  // Полосы вместо таблицы с 17.09.2026: сторож тот же, неизмеренная область говорит словом.
+  const bars = html.match(/<div class="areas-bars">[\s\S]*?<\/div>\s*(?=<h3|<div class="verdict")/)[0];
+  ok('в областях стоит слово, а не null', /class="na">не измерялось</.test(bars) && !/null/.test(bars));
   const note = (html.match(/overall-note">([^<]*)</) || [])[1] || '';
   ok('подпись говорит, сколько областей измерено', /Из пяти областей ниже измерены 4/.test(note));
   ok('и из скольких очков', new RegExp(`${sum} из 75`).test(note));

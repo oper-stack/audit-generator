@@ -41,7 +41,19 @@ const audit = (over = {}) => ({
 const d = draftNarrative(audit(), { lang: 'ru' });
 is('не осталось ни одной дыры', stillEmpty(d), []);
 ok('имя клиента это адрес сайта, а не выдумка', d.client.name === 'x.ru');
-ok('предмет взят с главной и помечен как прочитанный', d.client.subject.includes('Мы продаём станки') && /подтвердите/i.test(d.client.subject));
+ok('предмет взят с главной и помечен как прочитанный', d.client.subject.includes('Мы продаём станки') && /это то, что о вас прочитает/i.test(d.client.subject));
+// Клиентский текст не обращается к аналитику: это товар, а не черновик на правку.
+ok('в клиентском тексте нет обращений к аналитику', !/подтвердите|please confirm/i.test(JSON.stringify(d)));
+
+// Русский аудит, русский отчёт: названия областей тоже русские. Раньше перевод срабатывал
+// только для аудита, собранного по-английски, и в русский текст уезжали английские названия.
+{
+  const ruAudit = audit();
+  ruAudit.meta.lang = 'ru';
+  const dru = draftNarrative(ruAudit, { lang: 'ru' });
+  ok('в русском отчёте по русскому аудиту нет английских названий областей',
+    !/SEO, technical|content and structure|answers and snippets|visibility in AI systems|Off-page and trust|Conversion and UX/.test(dru.summary.lead));
+}
 
 // Ничего не выдумываем: там, где не мерили, так и написано
 ok('упоминания на чужих сайтах помечены как неизмеренные', d.geo.rows[1][1] === 'не измеряли');

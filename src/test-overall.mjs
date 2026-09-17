@@ -82,7 +82,7 @@ ok('параметры нельзя поменять на ходу', Object.isFr
     audit.meta.lang = lang;
     const html = toHtml(audit, null);
     // Искать надо напечатанный элемент, а не название стиля: `.overall-num` есть в CSS всегда.
-    ok(`${lang}: без балла заголовок не печатается вовсе`, !/<div class="overall-num/.test(html));
+    ok(`${lang}: без балла заголовок не печатается вовсе`, !/class="ring ring-/.test(html));
     ok(`${lang}: шесть областей отчёта на месте`, /second-measure/.test(html));
   }
 }
@@ -100,10 +100,11 @@ ok('параметры нельзя поменять на ходу', Object.isFr
   for (const [lang, grade] of [['en', /Strong|Workable|Weak|Poor|Critical/], ['ru', /Сильно|Рабочее состояние|Слабо|Плохо|Критично/]]) {
     audit.meta.lang = lang;
     const html = toHtml(audit, null);
-    is(`${lang}: в отчёте стоит сохранённый балл`, Number((html.match(/overall-num[^>]*>(\d+)<span>/) || [])[1]), 61);
+    is(`${lang}: в отчёте стоит сохранённый балл`, Number((html.match(/class="ring-num"[^>]*>(\d+)</) || [])[1]), 61);
     ok(`${lang}: оценка словом на своём языке`, grade.test((html.match(/overall-grade">([^<]*)</) || [])[1] || ''));
     ok(`${lang}: сказано, что это то же измерение, что на странице`, /ai-visibility/.test((html.match(/overall-note">([^<]*)</) || [])[1] || ''));
-    ok(`${lang}: пять областей напечатаны рядом с баллом`, /table class="areas"/.test(html));
+    ok(`${lang}: пять областей напечатаны рядом с баллом`, /class="areas-bars"/.test(html) && (html.match(/class="ar ar-/g) || []).length === 5);
+    ok(`${lang}: балл стоит и пилюлей с буквой`, /class="pill pill-(good|fair|poor)"/.test(html));
     const foot = (html.match(/scorecard-foot">([^<]*)</) || [])[1] || '';
     ok(`${lang}: сказано, что шесть областей не складываются в заголовок`, lang === 'en' ? /not a breakdown/.test(foot) : /\u043d\u0435 \u0440\u0430\u0437\u0431\u0438\u0432\u043a\u0430/.test(foot));
   }
@@ -146,7 +147,7 @@ ok('параметры нельзя поменять на ходу', Object.isFr
   ok('второго измерения не случилось', audit.overall.score === 63 && !audit.overall.error);
 
   audit.meta.lang = 'ru';
-  is('и отчёт печатает именно его', Number((toHtml(audit, null).match(/overall-num[^>]*>(\d+)<span>/) || [])[1]), 63);
+  is('и отчёт печатает именно его', Number((toHtml(audit, null).match(/class="ring-num"[^>]*>(\d+)</) || [])[1]), 63);
 }
 
 /*

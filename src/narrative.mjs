@@ -19,10 +19,17 @@
 
 const T = {
   ru: {
-    subjectFrom: (d) => `По описанию на главной: ${d}. Подтвердите, что это верно.`,
+    subjectFrom: (d) => `По описанию на главной: ${d}. Это то, что о вас прочитает и человек, и поисковик, и ИИ.`,
     subjectNone: 'На главной не сказано, чем занимается компания. Это и есть первая проблема: если это непонятно человеку, это непонятно и поисковику, и ИИ.',
     unknownLang: 'не указан в коде страниц',
-    sells: (d) => d ? `${d} (взято из описания главной, подтвердите)` : 'из описания на главной не понять, подтвердите',
+    /*
+     * Обращение к аналитику из клиентского текста убрано 17.09.2026. «Подтвердите» писалось для
+     * человека, который правит черновик перед отправкой, а в автоматическом товаре за 800 ₽ оно
+     * уезжало покупателю как есть. Теперь строка говорит, что именно прочитано и откуда, и это
+     * само по себе находка: если из описания главной не понять, чем занимается компания, то это
+     * не понять ни человеку, ни поисковику, ни ИИ.
+     */
+    sells: (d) => d ? `${d} (прочитано из описания главной страницы)` : 'на главной не сказано, чем занимается компания: ни человеку, ни поисковику, ни ИИ это отсюда не понять',
     leadWhat: (h, n) => `${h} это сайт из ${n} ${plural(n, 'страницы', 'страниц', 'страниц')}, и он читается машинами: мы открыли его так же, как их открывают поисковик и ИИ.`,
     leadGood: (areas) => areas.length ? `Хорошо сделано вот что: ${listRu(areas)}.` : 'Ни одна из шести областей пока не выглядит сильной стороной.',
     leadBad: (area, n) => n ? `Держит сайт назад другое: ${n} ${plural(n, 'проверка провалена', 'проверки провалены', 'проверок провалено')}, тяжелее всего дела в области «${area}».` : `Проваленных проверок нет, но до потолка не хватает мелочей, тяжелее всего в области «${area}».`,
@@ -61,10 +68,10 @@ const T = {
     quarterFill: 'Повторная проверка и сравнение с этим отчётом',
   },
   en: {
-    subjectFrom: (d) => `From the homepage description: ${d}. Please confirm this is right.`,
+    subjectFrom: (d) => `From the homepage description: ${d}. This is what a person, a search engine and an AI all read about you.`,
     subjectNone: 'The homepage does not say what the business does. That is the first problem: if a person cannot tell, neither can a search engine or an AI.',
     unknownLang: 'not declared in the page code',
-    sells: (d) => d ? `${d} (taken from the homepage description, please confirm)` : 'the homepage description does not say, please confirm',
+    sells: (d) => d ? `${d} (read from the homepage description)` : 'the homepage does not say what the company does: neither a person, nor a search engine, nor an AI can tell from it',
     leadWhat: (h, n) => `${h} is a site of ${n} page${n === 1 ? '' : 's'}, and it was read the way machines read it: the way a search engine and an AI open it.`,
     leadGood: (areas) => areas.length ? `What is done well: ${listEn(areas)}.` : 'None of the six areas reads as a strength yet.',
     leadBad: (area, n) => n ? `What holds it back: ${n} check${n === 1 ? '' : 's'} failed, and the hardest area is "${area}".` : `No check is failing, but the last points are missing, mostly in "${area}".`,
@@ -134,7 +141,16 @@ export function draftNarrative(audit, opts = {}) {
   // иначе владелец читает русский текст с английскими вставками и перестаёт нам верить.
   const needsRu = lang === 'ru' && a.meta?.lang !== 'ru';
   const checks = needsRu ? localiseChecks(a.checks || [], 'ru') : (a.checks || []);
-  const areaName = (k) => (needsRu ? (AREAS_RU[k] || k) : k);
+  /*
+   * Названия областей переводим по языку ОТЧЁТА, а не по языку исходного аудита.
+   *
+   * Было завязано на needsRu, то есть переводилось только тогда, когда аудит собран
+   * по-английски. У русского аудита ключи областей всё равно английские (они приходят из
+   * collect), и в русский текст уезжало «Хорошо сделано вот что: SEO, technical, SEO, content
+   * and structure...», а в карточках ниже те же области стояли по-русски. Два языка на одной
+   * странице в отчёте за деньги.
+   */
+  const areaName = (k) => (lang === 'ru' ? (AREAS_RU[k] || k) : k);
   const host = a.meta?.host || '';
   const sample = (a.sample || []).filter((p) => p.title !== undefined);
   const home = sample[0] || {};

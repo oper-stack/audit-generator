@@ -641,8 +641,13 @@ export async function collect(startUrl, { pages = 20, log = () => {}, backlinks 
   const basis = visibility && visibility.ok
     ? { pages: (visibility.sample || []).length, sitemapRead: Boolean(visibility.sitemap && visibility.sitemap.found), sitemapUnchecked: Boolean(visibility.sitemap && visibility.sitemap.unchecked) }
     : null;
+  /*
+   * Готовность по движкам и основы SEO переезжают в платный отчёт из той же проверки, что уже
+   * посчитана выше. Ни одного лишнего запроса: до 17.09.2026 бесплатная страница показывала то,
+   * чего в платном отчёте не было вовсе, и покупатель за это справедливо спросил бы.
+   */
   const overall = visibility && visibility.ok
-    ? { score: visibility.score, grade: visibility.grade, areas: visibility.areas, basis, source: givenVisibility ? 'visibility:reused' : 'visibility', measuredAt, ms: visibility.ms }
+    ? { score: visibility.score, grade: visibility.grade, areas: visibility.areas, basis, source: givenVisibility ? 'visibility:reused' : 'visibility', measuredAt, ms: visibility.ms, engines: visibility.engines || [], seo: visibility.seo || null }
     : { score: null, grade: 'not measured', areas: [], basis: null, source: givenVisibility ? 'visibility:reused' : 'visibility', error: (visibility && visibility.error) || 'no visibility result' };
   // Шесть областей отчёта остаются, но это другое измерение, а не разбивка общего балла.
   const reportScore = computeOverall(checks);
@@ -679,7 +684,7 @@ export async function collect(startUrl, { pages = 20, log = () => {}, backlinks 
     closing: '{{Key message for the client in three sentences.}}',
     // В выборке остаётся и то, из чего считается работа с текстами: без этих полей пакет
     // Foundation пришлось бы оценивать на глаз, как раньше оценивался Fix.
-    sample: sample.map((p) => p.title !== undefined ? { url: p.url, title: p.title, words: p.words, h1Count: p.h1Count, images: p.images, imagesNoAlt: p.imagesNoAlt, schemaTypes: p.schemaTypes, answerFirst: p.answerFirst, sourcePhrases: p.sourcePhrases, citedParagraphs: p.citedParagraphs, figureParagraphs: p.figureParagraphs, h2Count: p.h2Count, tables: p.tables, firstParaWords: p.firstParaWords, dates: p.dates } : p),
+    sample: sample.map((p) => p.title !== undefined ? { url: p.url, title: p.title, words: p.words, h1Count: p.h1Count, linkCount: Array.isArray(p.links) ? p.links.length : null, images: p.images, imagesNoAlt: p.imagesNoAlt, schemaTypes: p.schemaTypes, answerFirst: p.answerFirst, sourcePhrases: p.sourcePhrases, citedParagraphs: p.citedParagraphs, figureParagraphs: p.figureParagraphs, h2Count: p.h2Count, tables: p.tables, firstParaWords: p.firstParaWords, dates: p.dates } : p),
     notes,
   };
 }
