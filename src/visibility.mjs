@@ -1,8 +1,14 @@
 /**
  * AI visibility check: can ChatGPT, Perplexity, Copilot, Claude and Gemini read, understand
  * and cite this site? Public signals only, one homepage fetch plus robots, llms.txt, the
- * sitemap head and up to three sampled pages, all in parallel, under a hard time budget so it
+ * sitemap head and up to nine sampled pages, all in parallel, under a hard time budget so it
  * runs inside a serverless function. Plain ESM so the same module runs in Node for tests.
+ *
+ * Почему девять, а не три. До 17.09.2026 проверка читала главную и три страницы, а на витрине мы
+ * собирались написать «другие проверяют одну страницу, мы проверяем десять». Это было бы неправдой:
+ * платный аудит читал десять, бесплатная проверка четыре. Замерено: десять страниц укладываются в
+ * 598 мс при бюджете 8500, потому что страницы берутся параллельно. Сайту с пятью страницами это не
+ * вредит: берётся столько, сколько есть, и отчёт называет настоящее число прочитанного.
  *
  * The measurement is language-neutral; only the words a person reads come from the MESSAGES
  * table below, picked by the `lang` option ('en' by default, 'ru' on oper-stack.ru). Finding ids
@@ -10,7 +16,7 @@
  *
  * This file is also vendored by the Apify actor (OperStack/apify-ai-visibility/src). The two
  * copies must stay byte for byte identical, and `npm test` in the actor fails if they drift.
- * That is why `samplePages` lives here although both sites leave it at three: a copy that has
+ * That is why `samplePages` lives here and every caller spreads VISIBILITY_DEFAULTS: a copy that has
  * to differ is a copy nobody keeps in sync, and this one had drifted by 304 lines.
  */
 
@@ -346,7 +352,7 @@ async function readSitemap(origin, robotsText, timeoutFn = () => 3000) {
  * в аудите и в акторе. Если где-то дать больше страниц или времени, число про один и тот же сайт
  * разойдётся, и мы вернёмся к тому, ради чего всё это затевалось.
  */
-export const VISIBILITY_DEFAULTS = Object.freeze({ budgetMs: 8500, samplePages: 3 });
+export const VISIBILITY_DEFAULTS = Object.freeze({ budgetMs: 8500, samplePages: 9 });
 
 /**
  * Что писать владельцу сайта, который нас не пустил.
@@ -375,7 +381,7 @@ export function blockedNote({ status, challenged, blocked = true, robotsText = n
   return { text: head + tail + T.howToCheckBots, botsBlocked: closed.length > 0 };
 }
 
-export async function checkVisibility(input, { budgetMs = 8500, lang = 'en', samplePages = 3 } = {}) {
+export async function checkVisibility(input, { budgetMs = 8500, lang = 'en', samplePages = 9 } = {}) {
   const T = MESSAGES[lang] || MESSAGES.en;
   const agentLabel = (a) => (lang === 'ru' ? a.labelRu : a.label);
   const started = Date.now();
