@@ -50,24 +50,27 @@ const AI_AGENTS = [
  * измерили, и под каждым движком видно, из чего оно сложилось. Это принципиально: конкурент
  * показывает такие числа без объяснения, откуда они, и мы за это его же и критикуем.
  *
- * Почему веса у движков разные. ChatGPT, Perplexity и Claude достают страницу живьём в момент
- * ответа, поэтому у них решает доступ их собственным роботам и то, есть ли что процитировать.
- * Gemini и Copilot отвечают из чужого индекса, Google и Bing, поэтому у них сильнее весит
- * разметка: в индексе страницу сначала надо понять. Веса названы здесь и больше нигде, чтобы
- * их нельзя было тихо поменять в двух местах по-разному.
+ * Формула здесь ТА ЖЕ, что у общего балла, и это принципиально. В первой версии я дал двум
+ * группам движков разные веса: у тех, кто достаёт страницу живьём, тяжелее доступ, у тех, кто
+ * отвечает из индекса, тяжелее разметка. Обоснование звучало складно, но замером не было: это
+ * было моё допущение, то есть ровно то, за что мы критикуем конкурента, который показывает такие
+ * числа без объяснения, откуда они.
+ *
+ * Поэтому веса взяты один в один из общего балла, а отличаются движки друг от друга только одним
+ * и настоящим: что robots.txt отвечает ИХ собственным роботам. У сайта, который никого не закрыл,
+ * все пять чисел совпадут с общим баллом, и это правда, а не скучная правда вместо красивой лжи.
  *
  * Неизмеренная область в расчёт не идёт вовсе, и оставшиеся веса делятся заново. Правило то же,
  * что и у общего балла: не измерили, значит не считаем ни в плюс, ни в минус.
  */
-const LIVE_MIX = Object.freeze({ access: 0.45, content: 0.30, trust: 0.15, entity: 0.10 });
-const INDEX_MIX = Object.freeze({ access: 0.30, entity: 0.30, content: 0.25, trust: 0.15 });
+const SCORE_MIX = Object.freeze({ access: 0.25, index: 0.15, entity: 0.20, content: 0.25, trust: 0.15 });
 
 const ENGINES = [
-  { id: 'chatgpt', label: 'ChatGPT', agents: ['oai-searchbot', 'chatgpt-user'], mix: LIVE_MIX, live: true },
-  { id: 'perplexity', label: 'Perplexity', agents: ['perplexitybot', 'perplexity-user'], mix: LIVE_MIX, live: true },
-  { id: 'claude', label: 'Claude', agents: ['claude-searchbot', 'claude-user'], mix: LIVE_MIX, live: true },
-  { id: 'gemini', label: 'Gemini', agents: ['google-extended'], mix: INDEX_MIX, live: false },
-  { id: 'copilot', label: 'Copilot', agents: ['bingbot'], mix: INDEX_MIX, live: false },
+  { id: 'chatgpt', label: 'ChatGPT', agents: ['oai-searchbot', 'chatgpt-user'] },
+  { id: 'perplexity', label: 'Perplexity', agents: ['perplexitybot', 'perplexity-user'] },
+  { id: 'claude', label: 'Claude', agents: ['claude-searchbot', 'claude-user'] },
+  { id: 'gemini', label: 'Gemini', agents: ['google-extended'] },
+  { id: 'copilot', label: 'Copilot', agents: ['bingbot'] },
 ];
 
 /**
@@ -96,8 +99,6 @@ export const MESSAGES = {
     rulesUnknown: ' Its robots.txt could not be read either, so there is nothing to say about AI crawlers: that is not counted for or against the site.',
     howToCheckBots: ' To know for certain, open the server log and look for GPTBot, ClaudeBot and PerplexityBot, or ask whoever runs the protection which bots are on the allowlist.',
     area: { access: 'Can AI crawlers read it', index: 'Is there a map for agents (llms.txt)', entity: 'Is the entity clear (schema)', content: 'Is there something to quote', trust: 'Can it be dated and trusted' },
-    engineLive: 'fetches the page live when it answers',
-    engineIndex: 'answers from an index, so schema weighs more',
     llmsUnreadable: (status) => `The site did not let this check read llms.txt${status ? ` (HTTP ${status})` : ''}, so whether the site has a map for agents could not be measured. It is not counted for or against the site: a file we were refused is not the same as a file that is not there.`,
     robotsMissing: 'There is no robots.txt on the site. By the standard that means nothing is disallowed, so every AI crawler may read it. A file is not required; add one only when something needs closing off.',
     sampleShort: (read, wanted) => `Only ${read} of ${wanted} pages answered in time, twice in a row, so there was not enough of the site to score. We do not show a number here: a score that goes up because we read less is a score nobody can defend. The site may simply be slow right now; run the check again in a minute.`,
@@ -149,8 +150,6 @@ export const MESSAGES = {
     rulesUnknown: ' Файл robots.txt прочитать тоже не вышло, поэтому про роботов ИИ сказать нечего, и в плюс или в минус сайту это не зачтено.',
     howToCheckBots: ' Чтобы знать точно, посмотрите в журнале сервера, приходят ли GPTBot, ClaudeBot и PerplexityBot, либо спросите у тех, кто настраивал защиту, кто у неё в белом списке.',
     area: { access: 'Могут ли роботы ИИ прочитать сайт', index: 'Есть ли карта для агентов (llms.txt)', entity: 'Понятно ли, кто вы (разметка)', content: 'Есть ли что процитировать', trust: 'Можно ли датировать и доверять' },
-    engineLive: 'достаёт страницу живьём в момент ответа',
-    engineIndex: 'отвечает из индекса, поэтому разметка весит больше',
     llmsUnreadable: (status) => `Сайт не дал этой проверке прочитать llms.txt${status ? ` (код ${status})` : ''}, поэтому есть ли у сайта карта для агентов, измерить не вышло. В плюс или в минус это не зачтено: файл, который нам не отдали, это не то же самое, что файла нет.`,
     robotsMissing: 'Файла robots.txt на сайте нет. По стандарту это значит, что не запрещено ничего, то есть читать сайт может любой робот ИИ. Заводить файл необязательно: он нужен, только когда есть что закрывать.',
     sampleShort: (read, wanted) => `Из ${wanted} страниц ответили ${read}, и со второй попытки тоже, поэтому считать балл не по чему. Числа здесь не будет: балл, который растёт оттого, что мы прочитали меньше, защитить нельзя. Возможно, сайт сейчас просто медленный: запустите проверку через минуту.`,
@@ -370,15 +369,16 @@ export function engineReadiness(verdicts, parts, T, label = (v) => v.label) {
     const known = own.filter((v) => v.verdict !== 'unknown');
     const share = {
       // Доступ считается по роботам ЭТОГО движка, а не по всем четырнадцати: закрытый Applebot
-      // не мешает ChatGPT процитировать страницу.
+      // не мешает ChatGPT процитировать страницу. Это единственное, чем движки тут отличаются.
       access: known.length ? known.filter((v) => v.verdict !== 'blocked').length / known.length : null,
+      index: parts.index,
       entity: parts.entity,
       content: parts.content,
       trust: parts.trust,
     };
     let sum = 0;
     let weight = 0;
-    for (const [key, w] of Object.entries(e.mix)) {
+    for (const [key, w] of Object.entries(SCORE_MIX)) {
       if (share[key] === null || share[key] === undefined) continue;
       sum += share[key] * w;
       weight += w;
@@ -386,7 +386,7 @@ export function engineReadiness(verdicts, parts, T, label = (v) => v.label) {
     const score = weight ? Math.round((sum / weight) * 100) : null;
     const blocked = own.filter((v) => v.verdict === 'blocked').map(label);
     // Что тянет вниз: самая слабая из измеренных областей, кроме доступа, о нём сказано отдельно.
-    const areasByWeak = [['content', share.content], ['trust', share.trust], ['entity', share.entity]]
+    const areasByWeak = [['content', share.content], ['trust', share.trust], ['entity', share.entity], ['index', share.index]]
       .filter(([, v]) => v !== null && v !== undefined)
       .sort((a, b) => a[1] - b[1]);
     const weakest = areasByWeak.length && areasByWeak[0][1] < 0.999 ? T.area[areasByWeak[0][0]] : null;
@@ -394,7 +394,8 @@ export function engineReadiness(verdicts, parts, T, label = (v) => v.label) {
       id: e.id,
       label: e.label,
       score,
-      how: e.live ? T.engineLive : T.engineIndex,
+      // Вместо рассуждений о природе движка говорим факт: чьи роботы спрошены.
+      how: own.map(label).join(', '),
       blocked,
       weakest,
     };
@@ -817,6 +818,7 @@ export async function checkVisibility(input, { budgetMs = 8500, lang = 'en', sam
     crawlers: verdicts.map((v) => ({ label: agentLabel(v), kind: v.kind, verdict: v.verdict })),
     engines: engineReadiness(verdicts, {
       access: null, // считается внутри по роботам каждого движка
+      index: llmsRead ? index / 15 : null,
       entity: entity / 20,
       content: sampleOk ? content / 25 : null,
       trust: sampleOk ? trust / 15 : null,
