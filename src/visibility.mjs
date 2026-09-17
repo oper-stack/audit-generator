@@ -99,6 +99,7 @@ export const MESSAGES = {
     rulesUnknown: ' Its robots.txt could not be read either, so there is nothing to say about AI crawlers: that is not counted for or against the site.',
     howToCheckBots: ' To know for certain, open the server log and look for GPTBot, ClaudeBot and PerplexityBot, or ask whoever runs the protection which bots are on the allowlist.',
     area: { access: 'Can AI crawlers read it', index: 'Is there a map for agents (llms.txt)', entity: 'Is the entity clear (schema)', content: 'Is there something to quote', trust: 'Can it be dated and trusted' },
+    seo: { title: 'Title of 10 to 70 characters', description: 'Description of 50 to 170 characters', h1: 'An H1 on the page', canonical: 'A canonical address', og: 'An og:title for link previews', indexable: 'Not closed to indexing' },
     llmsUnreadable: (status) => `The site did not let this check read llms.txt${status ? ` (HTTP ${status})` : ''}, so whether the site has a map for agents could not be measured. It is not counted for or against the site: a file we were refused is not the same as a file that is not there.`,
     robotsMissing: 'There is no robots.txt on the site. By the standard that means nothing is disallowed, so every AI crawler may read it. A file is not required; add one only when something needs closing off.',
     sampleShort: (read, wanted) => `Only ${read} of ${wanted} pages answered in time, twice in a row, so there was not enough of the site to score. We do not show a number here: a score that goes up because we read less is a score nobody can defend. The site may simply be slow right now; run the check again in a minute.`,
@@ -150,6 +151,7 @@ export const MESSAGES = {
     rulesUnknown: ' Файл robots.txt прочитать тоже не вышло, поэтому про роботов ИИ сказать нечего, и в плюс или в минус сайту это не зачтено.',
     howToCheckBots: ' Чтобы знать точно, посмотрите в журнале сервера, приходят ли GPTBot, ClaudeBot и PerplexityBot, либо спросите у тех, кто настраивал защиту, кто у неё в белом списке.',
     area: { access: 'Могут ли роботы ИИ прочитать сайт', index: 'Есть ли карта для агентов (llms.txt)', entity: 'Понятно ли, кто вы (разметка)', content: 'Есть ли что процитировать', trust: 'Можно ли датировать и доверять' },
+    seo: { title: 'Заголовок от 10 до 70 знаков', description: 'Описание от 50 до 170 знаков', h1: 'На странице есть H1', canonical: 'Указан канонический адрес', og: 'Есть og:title для превью ссылки', indexable: 'Не закрыта от индексации' },
     llmsUnreadable: (status) => `Сайт не дал этой проверке прочитать llms.txt${status ? ` (код ${status})` : ''}, поэтому есть ли у сайта карта для агентов, измерить не вышло. В плюс или в минус это не зачтено: файл, который нам не отдали, это не то же самое, что файла нет.`,
     robotsMissing: 'Файла robots.txt на сайте нет. По стандарту это значит, что не запрещено ничего, то есть читать сайт может любой робот ИИ. Заводить файл необязательно: он нужен, только когда есть что закрывать.',
     sampleShort: (read, wanted) => `Из ${wanted} страниц ответили ${read}, и со второй попытки тоже, поэтому считать балл не по чему. Числа здесь не будет: балл, который растёт оттого, что мы прочитали меньше, защитить нельзя. Возможно, сайт сейчас просто медленный: запустите проверку через минуту.`,
@@ -400,6 +402,37 @@ export function engineReadiness(verdicts, parts, T, label = (v) => v.label) {
       weakest,
     };
   });
+}
+
+
+/**
+ * Основы SEO: второе число рядом с ИИ-видимостью.
+ *
+ * Простым языком. У большинства сайтов с обычным поиском всё в порядке, а для нейросетей они
+ * почти невидимы. Пока на экране одно число, этого разрыва не видно, и человек не понимает,
+ * почему ему вообще стоит волноваться. Два числа рядом объясняют это без слов: «для Google
+ * сайт в порядке, для ChatGPT нет».
+ *
+ * Считается ТОЛЬКО из того, что уже прочитано на тех же десяти страницах, ни одного нового
+ * запроса: заголовок, описание, H1, canonical, og:title и запрет индексации. Поэтому и
+ * называется «основы», а не «SEO»: полный аудит смотрит на скорость, ссылки и позиции, и этого
+ * здесь нет. Называть число громче, чем оно есть, это ровно то, за что мы критикуем конкурента.
+ *
+ * На балл ИИ-видимости не влияет ничем: это отдельное число, оно ни в плюс, ни в минус.
+ */
+export function seoBasics(pages, T) {
+  const rules = [
+    { id: 'title', ok: (p) => p.title.length >= 10 && p.title.length <= 70 },
+    { id: 'description', ok: (p) => p.description.length >= 50 && p.description.length <= 170 },
+    { id: 'h1', ok: (p) => p.h1.length > 0 },
+    { id: 'canonical', ok: (p) => p.canonical.length > 0 },
+    { id: 'og', ok: (p) => p.ogTitle },
+    { id: 'indexable', ok: (p) => !/noindex/.test(p.robotsMeta) },
+  ];
+  const checks = rules.map((r) => ({ id: r.id, label: T.seo[r.id], passed: pages.filter(r.ok).length, total: pages.length }));
+  const passed = checks.reduce((a, c) => a + c.passed, 0);
+  const total = checks.reduce((a, c) => a + c.total, 0);
+  return { score: total ? Math.round((passed / total) * 100) : null, checks };
 }
 
 async function readSitemap(origin, robotsText, timeoutFn = () => 3000) {
@@ -816,6 +849,7 @@ export async function checkVisibility(input, { budgetMs = 8500, lang = 'en', sam
     })),
     sitemap: { found: sitemap.found, count: sitemap.count, lastmod: sitemap.lastmod, unchecked: Boolean(!sitemap.found && (sitemap.timedOut || sitemap.skipped)) },
     crawlers: verdicts.map((v) => ({ label: agentLabel(v), kind: v.kind, verdict: v.verdict })),
+    seo: seoBasics(pages, T),
     engines: engineReadiness(verdicts, {
       access: null, // считается внутри по роботам каждого движка
       index: llmsRead ? index / 15 : null,
