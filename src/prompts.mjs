@@ -128,6 +128,80 @@ const HEAD = {
  * @param {object} check строка проверки из аудита
  * @param {{lang?: 'ru'|'en', urls?: string[]}} opts
  */
+
+/**
+ * Где именно делать правку, смотря на чём собран сайт.
+ *
+ * Простым языком. Задание «поставьте разметку организации» верно для всех, но человек на WordPress
+ * спрашивает «где?», и человек на Astro спрашивает то же про другое место. Раньше он искал сам.
+ * Здесь названо конкретное место для четырёх самых частых случаев.
+ *
+ * Платформа не угадывается: берётся из проверки `cms`, то есть из того, что сайт сам о себе сказал
+ * в мета-теге generator. Молчит, значит показываем все варианты, а не выбираем наугад.
+ *
+ * Добавлено 17.09.2026 после разбора конкурентов: у обоих код правки даётся под конкретный стек, и
+ * это единственное место, где их подсказка была полезнее нашей.
+ */
+const WHERE = {
+  'org-schema': {
+    wordpress: { ru: 'тема: header.php или functions.php через wp_head, либо плагин разметки', en: 'theme: header.php, or functions.php via wp_head, or a schema plugin' },
+    astro: { ru: 'src/layouts, ваш общий макет, внутрь <head>', en: 'src/layouts, your shared layout, inside <head>' },
+    next: { ru: 'app/layout.tsx, тег <script type="application/ld+json">', en: 'app/layout.tsx, a <script type="application/ld+json"> tag' },
+    shopify: { ru: 'theme.liquid, перед </head>', en: 'theme.liquid, before </head>' },
+  },
+  'og-title': {
+    wordpress: { ru: 'плагин SEO (Yoast, Rank Math) заполняет og:title из заголовка записи', en: 'an SEO plugin (Yoast, Rank Math) fills og:title from the post title' },
+    astro: { ru: 'общий макет, где собирается <head>', en: 'the shared layout where <head> is assembled' },
+    next: { ru: 'export const metadata, поле openGraph.title', en: 'export const metadata, the openGraph.title field' },
+    shopify: { ru: 'theme.liquid, секция мета-тегов', en: 'theme.liquid, the meta tag section' },
+  },
+  'og-image': {
+    wordpress: { ru: 'изображение записи подставляется в og:image плагином SEO', en: 'the featured image becomes og:image through the SEO plugin' },
+    astro: { ru: 'общий макет, поле ogImage у страницы', en: 'the shared layout, the page ogImage field' },
+    next: { ru: 'export const metadata, поле openGraph.images', en: 'export const metadata, the openGraph.images field' },
+    shopify: { ru: 'theme.liquid, мета-теги', en: 'theme.liquid, the meta tags' },
+  },
+  canonical: {
+    wordpress: { ru: 'плагин SEO ставит canonical сам; проверьте, не выключен ли он для этого типа записей', en: 'the SEO plugin sets canonical; check it is not switched off for this post type' },
+    astro: { ru: 'общий макет, <link rel="canonical">', en: 'the shared layout, <link rel="canonical">' },
+    next: { ru: 'export const metadata, поле alternates.canonical', en: 'export const metadata, the alternates.canonical field' },
+    shopify: { ru: 'theme.liquid, {{ canonical_url }}', en: 'theme.liquid, {{ canonical_url }}' },
+  },
+  favicon: {
+    wordpress: { ru: 'Внешний вид, Свойства сайта, Значок сайта', en: 'Appearance, Site Identity, Site Icon' },
+    astro: { ru: 'public/favicon.svg и <link rel="icon"> в макете', en: 'public/favicon.svg and <link rel="icon"> in the layout' },
+    next: { ru: 'app/icon.png или app/favicon.ico', en: 'app/icon.png or app/favicon.ico' },
+    shopify: { ru: 'Настройки темы, Favicon', en: 'Theme settings, Favicon' },
+  },
+  'redirect-chain': {
+    wordpress: { ru: 'плагин переадресаций: замените цепочку одним правилом на конечный адрес', en: 'the redirect plugin: replace the chain with one rule to the final address' },
+    astro: { ru: 'vercel.json или netlify.toml, раздел redirects', en: 'vercel.json or netlify.toml, the redirects section' },
+    next: { ru: 'next.config.js, функция redirects()', en: 'next.config.js, the redirects() function' },
+    shopify: { ru: 'Интернет-магазин, Навигация, Переадресации адресов', en: 'Online Store, Navigation, URL Redirects' },
+  },
+};
+
+const PLATFORM_LABEL = { wordpress: 'WordPress', astro: 'Astro', next: 'Next.js', shopify: 'Shopify' };
+
+/** На чём собран сайт, по словам самого сайта. Не угадываем: молчит, значит показываем все. */
+export function detectPlatform(audit) {
+  const cms = (audit?.checks || []).find((c) => c.id === 'cms');
+  const said = String(cms?.value || '').toLowerCase();
+  if (/wordpress|woocommerce/.test(said)) return 'wordpress';
+  if (/astro/.test(said)) return 'astro';
+  if (/next/.test(said)) return 'next';
+  if (/shopify/.test(said)) return 'shopify';
+  return null;
+}
+
+function whereLine(id, platform, lang) {
+  const map = WHERE[id];
+  if (!map) return '';
+  const head = lang === 'ru' ? 'Где' : 'Where';
+  if (platform && map[platform]) return `**${head}:** ${PLATFORM_LABEL[platform]}, ${map[platform][lang]}`;
+  return `**${head}:** ${Object.entries(map).map(([k, v]) => `${PLATFORM_LABEL[k]}, ${v[lang]}`).join('; ')}`;
+}
+
 export function agentPrompt(check, opts = {}) {
   const lang = opts.lang === 'ru' ? 'ru' : 'en';
   const h = HEAD[lang];
@@ -138,6 +212,8 @@ export function agentPrompt(check, opts = {}) {
   const lines = [`### ${check.label}`, '', `**${h.now}:** ${check.value}`, '', `**${h.task}:** ${own ? own.task : fallback}`];
   // Проверка обязательна у каждого задания: без неё агент не знает, когда остановиться.
   lines.push('', `**${h.verify}:** ${own ? own.verify : h.genericVerify}`);
+  const where = whereLine(check.id, opts.platform || null, lang);
+  if (where) lines.push('', where);
   if (opts.urls && opts.urls.length) { lines.push('', `**${h.pages}:** ${opts.urls.slice(0, 8).join(', ')}`); }
   lines.push('', h.rule);
   return lines.join('\n');
@@ -153,7 +229,8 @@ export function agentPrompts(audit, opts = {}) {
   const checks = source.filter((c) => c.status === 'bad' || c.status === 'warn');
   const ordered = [...checks.filter((c) => c.status === 'bad'), ...checks.filter((c) => c.status === 'warn')];
   const chosen = limit > 0 ? ordered.slice(0, limit) : ordered;
-  return chosen.map((c) => ({ id: c.id, hasOwnText: Boolean(P[c.id]), text: agentPrompt(c, { lang }) }));
+  const platform = opts.platform || detectPlatform(audit);
+  return chosen.map((c) => ({ id: c.id, hasOwnText: Boolean(P[c.id]), text: agentPrompt(c, { lang, platform }) }));
 }
 
 /** Файл, который отдаётся клиенту вместе с отчётом. */
