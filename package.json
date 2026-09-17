@@ -1,6 +1,6 @@
 {
   "name": "@operstack/audit",
-  "version": "0.26.0",
+  "version": "0.27.0",
   "description": "SEO, AEO and GEO audit generator: collect public signals from a site into audit.json, let an analyst or an agent fill the narrative, render the OperStack report as HTML and PDF.",
   "type": "module",
   "license": "MIT",
@@ -29,7 +29,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "test": "node src/test-scores.mjs && node src/test-fix.mjs && node src/test-foundation.mjs && node src/test-narrative.mjs && node src/test-prompts.mjs && node src/test-sitemap.mjs && node src/test-overall.mjs && node src/test-blocked.mjs && node src/test-unmeasured.mjs && node src/test-rendered.mjs && node src/test-sample.mjs && node src/test-demand.mjs && node src/test-agent-surface.mjs && node src/test-agency.mjs && node src/test-i18n.mjs examples/sample-audit.json && node bin/audit.mjs check examples/sample-audit.json && node bin/audit.mjs render examples/sample-audit.json --out /tmp/operstack-audit-sample.html && node src/test-ru-sources.mjs && node src/test-sample-fairness.mjs",
+    "test": "node src/test-scores.mjs && node src/test-fix.mjs && node src/test-foundation.mjs && node src/test-narrative.mjs && node src/test-prompts.mjs && node src/test-sitemap.mjs && node src/test-overall.mjs && node src/test-blocked.mjs && node src/test-unmeasured.mjs && node src/test-rendered.mjs && node src/test-sample.mjs && node src/test-demand.mjs && node src/test-agent-surface.mjs && node src/test-agency.mjs && node src/test-i18n.mjs examples/sample-audit.json && node bin/audit.mjs check examples/sample-audit.json && node bin/audit.mjs render examples/sample-audit.json --out /tmp/operstack-audit-sample.html && node src/test-ru-sources.mjs && node src/test-sample-fairness.mjs && node test-engines.mjs",
     "sample": "node bin/audit.mjs render examples/sample-audit.json --pdf",
     "verify:live": "node src/verify-live.mjs"
   },

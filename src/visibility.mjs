@@ -41,6 +41,36 @@ const AI_AGENTS = [
 ];
 
 /**
+ * Готовность по каждому движку отдельно.
+ *
+ * Простым языком. «Цитируемость 20 из 25» человеку ничего не говорит, а «Gemini 61» говорит сразу.
+ * Поэтому те же самые измерения пересобираются в одно число на движок.
+ *
+ * Здесь не придумано ни одного нового замера. Число собирается ТОЛЬКО из того, что мы уже
+ * измерили, и под каждым движком видно, из чего оно сложилось. Это принципиально: конкурент
+ * показывает такие числа без объяснения, откуда они, и мы за это его же и критикуем.
+ *
+ * Почему веса у движков разные. ChatGPT, Perplexity и Claude достают страницу живьём в момент
+ * ответа, поэтому у них решает доступ их собственным роботам и то, есть ли что процитировать.
+ * Gemini и Copilot отвечают из чужого индекса, Google и Bing, поэтому у них сильнее весит
+ * разметка: в индексе страницу сначала надо понять. Веса названы здесь и больше нигде, чтобы
+ * их нельзя было тихо поменять в двух местах по-разному.
+ *
+ * Неизмеренная область в расчёт не идёт вовсе, и оставшиеся веса делятся заново. Правило то же,
+ * что и у общего балла: не измерили, значит не считаем ни в плюс, ни в минус.
+ */
+const LIVE_MIX = Object.freeze({ access: 0.45, content: 0.30, trust: 0.15, entity: 0.10 });
+const INDEX_MIX = Object.freeze({ access: 0.30, entity: 0.30, content: 0.25, trust: 0.15 });
+
+const ENGINES = [
+  { id: 'chatgpt', label: 'ChatGPT', agents: ['oai-searchbot', 'chatgpt-user'], mix: LIVE_MIX, live: true },
+  { id: 'perplexity', label: 'Perplexity', agents: ['perplexitybot', 'perplexity-user'], mix: LIVE_MIX, live: true },
+  { id: 'claude', label: 'Claude', agents: ['claude-searchbot', 'claude-user'], mix: LIVE_MIX, live: true },
+  { id: 'gemini', label: 'Gemini', agents: ['google-extended'], mix: INDEX_MIX, live: false },
+  { id: 'copilot', label: 'Copilot', agents: ['bingbot'], mix: INDEX_MIX, live: false },
+];
+
+/**
  * Russian plural form: pl(1, ...) is "страница", pl(2, ...) "страницы", pl(5, ...) "страниц".
  * Two shapes are needed and they differ: a bare count takes the counted form, while "из N"
  * always takes the genitive, which is plural for every N but one. Getting this wrong reads as
@@ -66,6 +96,8 @@ export const MESSAGES = {
     rulesUnknown: ' Its robots.txt could not be read either, so there is nothing to say about AI crawlers: that is not counted for or against the site.',
     howToCheckBots: ' To know for certain, open the server log and look for GPTBot, ClaudeBot and PerplexityBot, or ask whoever runs the protection which bots are on the allowlist.',
     area: { access: 'Can AI crawlers read it', index: 'Is there a map for agents (llms.txt)', entity: 'Is the entity clear (schema)', content: 'Is there something to quote', trust: 'Can it be dated and trusted' },
+    engineLive: 'fetches the page live when it answers',
+    engineIndex: 'answers from an index, so schema weighs more',
     llmsUnreadable: (status) => `The site did not let this check read llms.txt${status ? ` (HTTP ${status})` : ''}, so whether the site has a map for agents could not be measured. It is not counted for or against the site: a file we were refused is not the same as a file that is not there.`,
     robotsMissing: 'There is no robots.txt on the site. By the standard that means nothing is disallowed, so every AI crawler may read it. A file is not required; add one only when something needs closing off.',
     sampleShort: (read, wanted) => `Only ${read} of ${wanted} pages answered in time, twice in a row, so there was not enough of the site to score. We do not show a number here: a score that goes up because we read less is a score nobody can defend. The site may simply be slow right now; run the check again in a minute.`,
@@ -117,6 +149,8 @@ export const MESSAGES = {
     rulesUnknown: ' Файл robots.txt прочитать тоже не вышло, поэтому про роботов ИИ сказать нечего, и в плюс или в минус сайту это не зачтено.',
     howToCheckBots: ' Чтобы знать точно, посмотрите в журнале сервера, приходят ли GPTBot, ClaudeBot и PerplexityBot, либо спросите у тех, кто настраивал защиту, кто у неё в белом списке.',
     area: { access: 'Могут ли роботы ИИ прочитать сайт', index: 'Есть ли карта для агентов (llms.txt)', entity: 'Понятно ли, кто вы (разметка)', content: 'Есть ли что процитировать', trust: 'Можно ли датировать и доверять' },
+    engineLive: 'достаёт страницу живьём в момент ответа',
+    engineIndex: 'отвечает из индекса, поэтому разметка весит больше',
     llmsUnreadable: (status) => `Сайт не дал этой проверке прочитать llms.txt${status ? ` (код ${status})` : ''}, поэтому есть ли у сайта карта для агентов, измерить не вышло. В плюс или в минус это не зачтено: файл, который нам не отдали, это не то же самое, что файла нет.`,
     robotsMissing: 'Файла robots.txt на сайте нет. По стандарту это значит, что не запрещено ничего, то есть читать сайт может любой робот ИИ. Заводить файл необязательно: он нужен, только когда есть что закрывать.',
     sampleShort: (read, wanted) => `Из ${wanted} страниц ответили ${read}, и со второй попытки тоже, поэтому считать балл не по чему. Числа здесь не будет: балл, который растёт оттого, что мы прочитали меньше, защитить нельзя. Возможно, сайт сейчас просто медленный: запустите проверку через минуту.`,
@@ -316,7 +350,55 @@ function analysePage(html, url) {
     const named = Boolean(blockText.match(SOURCE_RE)) || Boolean(blockText.match(ILLUSTRATIVE_RE)) || OUTBOUND_LINK_RE.test(block);
     if (!named) unsourcedFigures += found;
   }
-  return { url, title, description, robotsMeta, canonical, ogTitle, schemaTypes: [...types], datePublished, dateModified, words, h1, h2Count, tables, firstPara: firstPara.slice(0, 220), answerFirst, claimFigures, unsourcedFigures, noai: /noai|noimageai/.test(robotsMeta) };
+  // Ссылки и картинки считаются по тому же телу, из которого выброшена обвязка сайта: меню и
+  // подвал есть на каждой странице одинаково, и в свойствах страницы им делать нечего.
+  const links = (bodyHtml.match(/<a[^>]+href=/gi) || []).length;
+  const images = (bodyHtml.match(/<img[\s>]/gi) || []).length;
+  return { url, title, description, robotsMeta, canonical, ogTitle, schemaTypes: [...types], datePublished, dateModified, words, h1, h2Count, tables, links, images, firstPara: firstPara.slice(0, 220), answerFirst, claimFigures, unsourcedFigures, noai: /noai|noimageai/.test(robotsMeta) };
+}
+
+
+/**
+ * Сводит измеренное в одно число на движок. Возвращает и само число, и подписи под ним: какие
+ * роботы этого движка пущены, и какая из областей тянет сильнее всего вниз. Без подписей число
+ * было бы гаданием, а мы обещаем обратное.
+ */
+export function engineReadiness(verdicts, parts, T, label = (v) => v.label) {
+  const byAgent = new Map(verdicts.map((v) => [v.agent, v]));
+  return ENGINES.map((e) => {
+    const own = e.agents.map((a) => byAgent.get(a)).filter(Boolean);
+    const known = own.filter((v) => v.verdict !== 'unknown');
+    const share = {
+      // Доступ считается по роботам ЭТОГО движка, а не по всем четырнадцати: закрытый Applebot
+      // не мешает ChatGPT процитировать страницу.
+      access: known.length ? known.filter((v) => v.verdict !== 'blocked').length / known.length : null,
+      entity: parts.entity,
+      content: parts.content,
+      trust: parts.trust,
+    };
+    let sum = 0;
+    let weight = 0;
+    for (const [key, w] of Object.entries(e.mix)) {
+      if (share[key] === null || share[key] === undefined) continue;
+      sum += share[key] * w;
+      weight += w;
+    }
+    const score = weight ? Math.round((sum / weight) * 100) : null;
+    const blocked = own.filter((v) => v.verdict === 'blocked').map(label);
+    // Что тянет вниз: самая слабая из измеренных областей, кроме доступа, о нём сказано отдельно.
+    const areasByWeak = [['content', share.content], ['trust', share.trust], ['entity', share.entity]]
+      .filter(([, v]) => v !== null && v !== undefined)
+      .sort((a, b) => a[1] - b[1]);
+    const weakest = areasByWeak.length && areasByWeak[0][1] < 0.999 ? T.area[areasByWeak[0][0]] : null;
+    return {
+      id: e.id,
+      label: e.label,
+      score,
+      how: e.live ? T.engineLive : T.engineIndex,
+      blocked,
+      weakest,
+    };
+  });
 }
 
 async function readSitemap(origin, robotsText, timeoutFn = () => 3000) {
@@ -720,8 +802,24 @@ export async function checkVisibility(input, { budgetMs = 8500, lang = 'en', sam
   return {
     ok: true, url: home.url, host, checkedAt: new Date().toISOString(), ms: Date.now() - started,
     score: total, grade, areas, fixes,
-    sample: pages.map((p) => ({ url: p.url, title: p.title, words: p.words, answerFirst: p.answerFirst, dated: Boolean(p.datePublished || p.dateModified), schema: p.schemaTypes.slice(0, 4) })),
+    /*
+     * Свойства каждой прочитанной страницы. Заголовок, H1, подзаголовки, таблицы, ссылки и
+     * картинки считались и раньше, но наружу не отдавались, и человек видел «19 из 25», не видя,
+     * из чего это сложилось. Показать то, что уже измерено, дешевле, чем объяснять словами.
+     */
+    sample: pages.map((p) => ({
+      url: p.url, title: p.title, h1: p.h1, words: p.words, h2: p.h2Count, tables: p.tables,
+      links: p.links, images: p.images,
+      answerFirst: p.answerFirst, dated: Boolean(p.datePublished || p.dateModified),
+      schema: p.schemaTypes.slice(0, 4),
+    })),
     sitemap: { found: sitemap.found, count: sitemap.count, lastmod: sitemap.lastmod, unchecked: Boolean(!sitemap.found && (sitemap.timedOut || sitemap.skipped)) },
     crawlers: verdicts.map((v) => ({ label: agentLabel(v), kind: v.kind, verdict: v.verdict })),
+    engines: engineReadiness(verdicts, {
+      access: null, // считается внутри по роботам каждого движка
+      entity: entity / 20,
+      content: sampleOk ? content / 25 : null,
+      trust: sampleOk ? trust / 15 : null,
+    }, T, agentLabel),
   };
 }
