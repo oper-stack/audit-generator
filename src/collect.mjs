@@ -238,6 +238,32 @@ export async function collect(startUrl, { pages = 20, log = () => {}, backlinks 
     ? row('https', 'technical', 'HTTPS', home.final.startsWith('https://') ? 'ok' : 'bad', home.final.startsWith('https://') ? 'certificate active' : 'site served over http')
     : row('https', 'technical', 'HTTPS', 'bad', `the site did not answer${home.response.status ? `: HTTP ${home.response.status}` : ''}`, 'nothing below could be measured on a site that does not answer'));
   const altHost = host.startsWith('www.') ? host.slice(4) : `www.${host}`;
+  /*
+   * Цепочки переадресаций. Каждый прыжок это потерянное время у человека и потерянный вес ссылки
+   * у поиска, а нейросети на длинной цепочке чаще бросают страницу вовсе. Один прыжок нормален
+   * (например, с http на https), два уже стоит выпрямить, три и больше это поломка.
+   *
+   * Данные уже есть: follow() ходит с redirect: 'manual' и складывает каждый прыжок в hops.
+   * Добавлено 17.09.2026.
+   */
+  /*
+   * Значок сайта. Мелочь, но видимая: он стоит во вкладке, в закладках, в списке источников у
+   * нескольких ассистентов и в карточке при отправке ссылки. Его отсутствие читается как
+   * заброшенный сайт. Проверяем и файл по корневому адресу, и объявление в разметке: годится любое.
+   * Добавлено 17.09.2026.
+   */
+  const iconDeclared = /<link[^>]+rel=["'][^"']*icon/i.test(home.response.text || '');
+  const iconFile = iconDeclared ? { status: 0 } : await get(new URL('/favicon.ico', home.final).href, { method: 'HEAD' });
+  const hasIcon = iconDeclared || iconFile.status === 200;
+  checks.push(row('favicon', 'technical', 'Site icon', hasIcon ? 'ok' : 'warn',
+    iconDeclared ? 'declared in the page head' : iconFile.status === 200 ? '/favicon.ico answers 200' : 'no icon declared and /favicon.ico does not answer',
+    hasIcon ? '' : 'the tab, the bookmark and the shared card all fall back to a blank square'));
+
+  const homeHops = home.hops.filter((h) => h.status >= 300 && h.status < 400).length;
+  checks.push(row('redirect-chain', 'technical', 'Redirect hops to the homepage', homeHops >= 3 ? 'bad' : homeHops === 2 ? 'warn' : 'ok',
+    homeHops ? `${homeHops} redirect(s) before the page answers: ${home.hops.map((h) => `${h.status}`).join(' to ')}` : 'the address answers without a redirect',
+    homeHops >= 2 ? 'point the first address straight at the final one: every hop costs time and leaks link weight' : ''));
+
   const alt = await follow(`${new URL(home.final).protocol}//${altHost}/`);
   const altOk = alt.final.replace(/\/$/, '') === new URL(home.final).origin.replace(/\/$/, '') || alt.hops.some((h) => h.status >= 300 && h.status < 400);
   checks.push(row('www', 'technical', 'www canonicalisation', alt.response.status === 0 ? 'warn' : altOk ? 'ok' : 'warn', alt.response.status === 0 ? `${altHost} does not resolve` : altOk ? `${altHost} redirects to ${new URL(home.final).host}` : `${altHost} answers ${alt.response.status} without redirecting`));
@@ -266,7 +292,30 @@ export async function collect(startUrl, { pages = 20, log = () => {}, backlinks 
   const AI_FETCHERS = ['oai-searchbot', 'chatgpt-user', 'perplexitybot', 'perplexity-user', 'claude-searchbot', 'claude-user', 'bingbot', 'duckassistbot', 'applebot'];
   const blockedFetchers = blockedAgents.filter((a) => AI_FETCHERS.includes(a));
   const blockedTrainers = blockedAgents.filter((a) => !AI_FETCHERS.includes(a));
-  checks.push(row('ai-search-access', 'geo', 'AI search fetchers allowed', blockedFetchers.length ? 'bad' : 'ok', blockedFetchers.length ? `${blockedFetchers.length} blocked: ${blockedFetchers.join(', ')}` : 'every AI search fetcher may read the site', blockedFetchers.length ? 'these are the agents that fetch a page to cite it in an answer' : ''));
+  /*
+   * Доступ по движкам, а не одной строкой. Раньше это была одна проверка на девять роботов, и
+   * человек видел «заблокировано 2» без понимания, кто именно его не увидит. «Perplexity вас не
+   * прочитает» действует сильнее, чем «два фетчера заблокированы», и чинится это по-разному: у
+   * каждого движка свой user-agent в robots.txt.
+   *
+   * Разбито 17.09.2026 после разбора конкурентов: у обоих готовность показана по движкам, и это
+   * единственное, в чём их подача была сильнее нашей по существу, а не по оформлению.
+   */
+  const ENGINES = [
+    { id: 'chatgpt', label: 'ChatGPT', agents: ['oai-searchbot', 'chatgpt-user'] },
+    { id: 'perplexity', label: 'Perplexity', agents: ['perplexitybot', 'perplexity-user'] },
+    { id: 'claude', label: 'Claude', agents: ['claude-searchbot', 'claude-user'] },
+    { id: 'copilot', label: 'Bing Copilot', agents: ['bingbot'] },
+    { id: 'gemini', label: 'Gemini', agents: ['google-extended', 'googleother'] },
+    { id: 'apple', label: 'Apple and DuckDuckGo', agents: ['applebot', 'duckassistbot'] },
+  ];
+  for (const e of ENGINES) {
+    const blocked = e.agents.filter((a) => blockedAgents.includes(a));
+    checks.push(row(`engine-${e.id}`, 'geo', `${e.label} may read the site`, blocked.length ? 'bad' : 'ok',
+      blocked.length ? `blocked in robots.txt: ${blocked.join(', ')}` : `allowed (${e.agents.join(', ')})`,
+      blocked.length ? `${e.label} will not fetch the page when a question needs it, so it cannot cite you even where you are the best answer` : ''));
+  }
+  checks.push(row('ai-search-access', 'geo', 'AI search fetchers allowed', blockedFetchers.length ? 'bad' : 'ok', blockedFetchers.length ? `${blockedFetchers.length} blocked: ${blockedFetchers.join(', ')}` : 'every AI search fetcher may read the site', blockedFetchers.length ? 'these are the agents that fetch a page while answering a question, not the training crawlers' : ''));
   if (blockedTrainers.length) checks.push(row('robots-ai', 'geo', 'AI training crawlers blocked (policy)', 'na', `${blockedTrainers.length} agent(s) fully disallowed: ${blockedTrainers.join(', ')}`, 'a policy choice, not a defect: these systems will not train on the site, and will not cite it from their own crawl either'));
 
   log('sitemaps');
@@ -379,11 +428,57 @@ export async function collect(startUrl, { pages = 20, log = () => {}, backlinks 
     checks.push(row('title', 'onpage', 'Homepage title', hp.titleLength >= 40 && hp.titleLength <= 60 ? 'ok' : hp.titleLength ? 'warn' : 'bad', hp.titleLength ? `"${hp.title}" (${hp.titleLength} chars)` : 'no title on the page', hp.titleLength < 40 ? 'short: the words that earn the click are missing' : hp.titleLength > 60 ? 'cut in results' : ''));
     checks.push(row('description', 'onpage', 'Homepage meta description', hp.descriptionGarbage ? 'bad' : hp.descriptionLength >= 70 && hp.descriptionLength <= 160 ? 'ok' : hp.descriptionLength ? 'warn' : 'bad', hp.descriptionGarbage ? 'contains a shortcode or encoded data' : hp.descriptionLength ? `${hp.descriptionLength} chars` : 'no meta description on the page', hp.descriptionGarbage ? 'renders as technical garbage in the snippet' : !hp.descriptionLength ? 'missing' : ''));
     checks.push(row('h1', 'onpage', 'H1 on homepage', hp.h1Count === 1 ? 'ok' : hp.h1Count === 0 ? 'bad' : 'warn', hp.h1Count ? `${hp.h1Count} H1 tag(s)` : 'no H1 on the page', hp.h1Count > 1 ? 'more than one H1 dilutes the page topic' : hp.h1Count === 0 ? 'no H1' : ''));
-    checks.push(row('canonical', 'technical', 'Canonical tag', hp.canonical ? 'ok' : 'warn', hp.canonical || 'missing'));
+    /*
+     * Раньше canonical смотрелся только на главной, хотя десять страниц уже прочитаны. Так и
+     * прожила незамеченной страница /privacy/ на moregroup.estate: без title, без canonical, без
+     * Open Graph и без разметки, и при этом в карте сайта. Нашлась 17.09.2026 только потому, что
+     * проверку Open Graph разбили на постраничную.
+     *
+     * Правило простое: если страницы уже скачаны, судить надо по всем, а не по одной.
+     */
+    checks.push(row('canonical', 'technical', 'Canonical tag', good.every((x) => x.canonical) ? 'ok' : good.some((x) => x.canonical) ? 'warn' : 'bad',
+      `${good.filter((x) => x.canonical).length} of ${good.length} sampled page(s) carry a canonical tag`,
+      good.every((x) => x.canonical) ? '' : `missing on: ${good.filter((x) => !x.canonical).map((x) => new URL(x.url).pathname).slice(0, 5).join(', ')}`));
+    checks.push(row('title-all', 'onpage', 'Title on the sampled pages', good.every((x) => x.titleLength) ? 'ok' : 'bad',
+      `${good.filter((x) => x.titleLength).length} of ${good.length} sampled page(s) carry a title`,
+      good.every((x) => x.titleLength) ? '' : `missing on: ${good.filter((x) => !x.titleLength).map((x) => new URL(x.url).pathname).slice(0, 5).join(', ')}`));
+    checks.push(row('description-all', 'onpage', 'Meta description on the sampled pages', good.every((x) => x.descriptionLength) ? 'ok' : good.some((x) => x.descriptionLength) ? 'warn' : 'bad',
+      `${good.filter((x) => x.descriptionLength).length} of ${good.length} sampled page(s) carry a meta description`,
+      good.every((x) => x.descriptionLength) ? '' : `missing on: ${good.filter((x) => !x.descriptionLength).map((x) => new URL(x.url).pathname).slice(0, 5).join(', ')}`));
+    checks.push(row('schema-all', 'aeo', 'Structured data on the sampled pages', good.every((x) => x.schemaTypes.length) ? 'ok' : good.some((x) => x.schemaTypes.length) ? 'warn' : 'bad',
+      `${good.filter((x) => x.schemaTypes.length).length} of ${good.length} sampled page(s) carry JSON-LD`,
+      good.every((x) => x.schemaTypes.length) ? '' : `missing on: ${good.filter((x) => !x.schemaTypes.length).map((x) => new URL(x.url).pathname).slice(0, 5).join(', ')}`));
     checks.push(row('viewport', 'technical', 'Mobile viewport', !hp.viewport ? 'bad' : /user-scalable\s*=\s*no|maximum-scale\s*=\s*1(\.0)?\b/i.test(hp.viewport) ? 'warn' : 'ok', hp.viewport || 'missing', /user-scalable\s*=\s*no/i.test(hp.viewport) ? 'blocks zoom: bad for accessibility and mobile SEO' : ''));
-    checks.push(row('og', 'technical', 'Open Graph and Twitter cards', hp.og.title && hp.og.image ? (hp.twitter ? 'ok' : 'warn') : 'warn', [hp.og.title ? 'og:title' : '', hp.og.image ? 'og:image' : '', hp.twitter ? `twitter:${hp.twitter}` : ''].filter(Boolean).join(', ') || 'none'));
+    /*
+     * Раньше это была одна проверка на og:title, og:image и Twitter Card. Это три разные правки в
+     * трёх разных строках шаблона, и человеку, у которого не хватает одной, бесполезно читать про
+     * все три сразу. Разбито 17.09.2026.
+     */
+    const onAll = (f) => good.filter(f).length;
+    checks.push(row('og-title', 'technical', 'og:title on the sampled pages', onAll((p) => p.og.title) === good.length ? 'ok' : onAll((p) => p.og.title) ? 'warn' : 'bad',
+      `${onAll((p) => p.og.title)} of ${good.length} sampled page(s) carry og:title`, onAll((p) => p.og.title) === good.length ? '' : 'without it a shared link shows the raw URL or the wrong heading'));
+    checks.push(row('og-image', 'technical', 'og:image on the sampled pages', onAll((p) => p.og.image) === good.length ? 'ok' : onAll((p) => p.og.image) ? 'warn' : 'bad',
+      `${onAll((p) => p.og.image)} of ${good.length} sampled page(s) carry og:image`, onAll((p) => p.og.image) === good.length ? '' : 'a link without a picture is scrolled past in every messenger'));
+    checks.push(row('twitter-card', 'technical', 'Twitter Card', hp.twitter ? 'ok' : 'warn', hp.twitter ? `twitter:card ${hp.twitter}` : 'no twitter:card on the homepage',
+      hp.twitter ? '' : 'X and several readers fall back to it when Open Graph is incomplete'));
     checks.push(row('schema', 'aeo', 'Structured data on homepage', hp.schemaTypes.length ? (hp.schemaTypes.includes('(invalid JSON-LD)') ? 'warn' : 'ok') : 'warn', hp.schemaTypes.join(', ') || 'no JSON-LD'));
     checks.push(row('faq-schema', 'aeo', 'FAQPage schema', good.some((p) => p.schemaTypes.includes('FAQPage')) ? 'ok' : 'warn', good.some((p) => p.schemaTypes.includes('FAQPage')) ? `present on ${good.filter((p) => p.schemaTypes.includes('FAQPage')).length} sampled page(s)` : 'not found in the sample'));
+    /*
+     * Отдельные типы разметки вместо одной общей строки «structured data». Каждый из них движки
+     * забирают по-разному: хлебные крошки показывают путь в ответе, HowTo забирают пошаговые
+     * инструкции целиком, Product несёт цену и наличие. Человеку, у которого нет крошек, незачем
+     * читать про HowTo. Разбито 17.09.2026.
+     */
+    const withType = (t) => good.filter((p) => p.schemaTypes.includes(t));
+    checks.push(row('breadcrumbs-schema', 'aeo', 'BreadcrumbList schema', withType('BreadcrumbList').length ? 'ok' : 'warn',
+      withType('BreadcrumbList').length ? `present on ${withType('BreadcrumbList').length} sampled page(s)` : 'not found in the sample',
+      withType('BreadcrumbList').length ? '' : 'breadcrumbs tell an engine where the page sits, and they show up in the answer beside the link'));
+    checks.push(row('howto-schema', 'aeo', 'HowTo schema', withType('HowTo').length ? 'ok' : 'na',
+      withType('HowTo').length ? `present on ${withType('HowTo').length} sampled page(s)` : 'no step-by-step page in the sample',
+      withType('HowTo').length ? '' : 'only worth adding where a page really walks through steps: marking anything else HowTo is a lie an engine will learn'));
+    checks.push(row('product-schema', 'aeo', 'Product schema', withType('Product').length ? 'ok' : 'na',
+      withType('Product').length ? `present on ${withType('Product').length} sampled page(s)` : 'no product page in the sample',
+      withType('Product').length ? '' : 'only for pages that really sell a named thing with a price'));
     checks.push(row('org-schema', 'geo', 'Organization or business schema', good.some((p) => p.schemaTypes.some((t) => /Organization|Corporation|NGO|EducationalOrganization|GovernmentOrganization|MedicalOrganization|LocalBusiness|RealEstateAgent|Dentist|Physician|Hospital|Pharmacy|VeterinaryCare|LegalService|Attorney|Notary|AccountingService|InsuranceAgency|FinancialService|BankOrCreditUnion|AutomotiveBusiness|AutoRepair|AutoDealer|HomeAndConstructionBusiness|Plumber|Electrician|RoofingContractor|HVACBusiness|HousePainter|Locksmith|MovingCompany|GeneralContractor|Restaurant|FoodEstablishment|CafeOrCoffeeShop|Bakery|BarOrPub|LodgingBusiness|Hotel|TravelAgency|HealthAndBeautyBusiness|BeautySalon|HairSalon|DaySpa|NailSalon|TattooParlor|SportsActivityLocation|HealthClub|Gym|ProfessionalService|Store|ClothingStore|GroceryStore|HardwareStore|FurnitureStore|JewelryStore|PetStore|ChildCare|Electrician|EmploymentAgency|SelfStorage|Library|Museum|EntertainmentBusiness|MedicalClinic|DentalClinic|Optician|PhysicalTherapy|NutritionService|EmergencyService|ITService|WebDesignService|MarketingAgency|AdvertisingAgency|SoftwareApplication/.test(t))) ? 'ok' : 'warn', good.some((p) => p.schemaTypes.some((t) => /Organization|Corporation|NGO|EducationalOrganization|GovernmentOrganization|MedicalOrganization|LocalBusiness|RealEstateAgent|Dentist|Physician|Hospital|Pharmacy|VeterinaryCare|LegalService|Attorney|Notary|AccountingService|InsuranceAgency|FinancialService|BankOrCreditUnion|AutomotiveBusiness|AutoRepair|AutoDealer|HomeAndConstructionBusiness|Plumber|Electrician|RoofingContractor|HVACBusiness|HousePainter|Locksmith|MovingCompany|GeneralContractor|Restaurant|FoodEstablishment|CafeOrCoffeeShop|Bakery|BarOrPub|LodgingBusiness|Hotel|TravelAgency|HealthAndBeautyBusiness|BeautySalon|HairSalon|DaySpa|NailSalon|TattooParlor|SportsActivityLocation|HealthClub|Gym|ProfessionalService|Store|ClothingStore|GroceryStore|HardwareStore|FurnitureStore|JewelryStore|PetStore|ChildCare|Electrician|EmploymentAgency|SelfStorage|Library|Museum|EntertainmentBusiness|MedicalClinic|DentalClinic|Optician|PhysicalTherapy|NutritionService|EmergencyService|ITService|WebDesignService|MarketingAgency|AdvertisingAgency|SoftwareApplication/.test(t))) ? 'present' : 'not found: answer engines have no entity to attach the site to'));
     checks.push(row('resources', 'technical', 'Page weight (homepage)', hp.scripts > 30 ? 'bad' : hp.scripts > 15 ? 'warn' : 'ok', `${hp.scripts} script file(s), ${hp.stylesheets} stylesheet(s), ${hp.images} image(s)`));
     if (hp.generator) checks.push(row('cms', 'overview', 'CMS', 'na', hp.generator));
@@ -409,8 +504,36 @@ export async function collect(startUrl, { pages = 20, log = () => {}, backlinks 
     checks.push(row('sections', 'aeo', 'Section structure', structured === good.length ? 'ok' : structured ? 'warn' : 'bad', `${structured} of ${good.length} sampled page(s) carry three or more H2 sections`, structured === good.length ? '' : 'engines quote sections, not walls of text'));
     const withTables = good.filter((p) => p.tables > 0).length;
     checks.push(row('tables', 'aeo', 'Tables in the content', withTables ? 'ok' : 'warn', withTables ? `${withTables} of ${good.length} sampled page(s) use a table` : 'no table on the sampled pages', withTables ? '' : 'tables are the second most quoted format after the opening paragraph'));
-    const sourced = good.filter((p) => p.sourcePhrases > 0 || p.citedParagraphs > 0).length;
-    checks.push(row('sources', 'content', 'Sources named in the text', sourced === good.length ? 'ok' : sourced ? 'warn' : 'bad', `${sourced} of ${good.length} sampled page(s) name where a figure comes from, in words or as an outbound link beside the figure`, sourced === good.length ? '' : 'an unsourced figure is the first thing an engine drops'));
+    /*
+     * Источник у цифры. Правило не наше: в работе Aggarwal и др. (KDD 2024, 10 000 запросов,
+     * девять способов правки) «назвать источник» дало самый большой прирост видимости из всех
+     * протестированных, от 30 до 40 процентов. Рядом сработали «добавить цифру» (+37) и «добавить
+     * цитату» (+22), а набивка ключевых слов не сработала вовсе.
+     *
+     * Судим только те страницы, на которых цифры ЕСТЬ. Раньше страница без единой цифры считалась
+     * непроставленным источником и снижала балл, хотя источать ей нечего. Это и был тот самый
+     * штраф ни за что, на который справедливо пожаловался владелец 17.09.2026.
+     *
+     * Страницы товара и услуги исключены отдельно: цена на своей же карточке товара не нуждается
+     * во внешнем источнике, она и есть первоисточник.
+     *
+     * Чего мы тут НЕ умеем и о чём честно пишем ниже: в том же исследовании эффект зависит от
+     * текущей позиции страницы (с пятого места +115%, с первого −30%). Позиции поиска публичные
+     * сигналы не показывают, их видно только в Search Console владельца, поэтому в бесплатной
+     * проверке различить это нельзя.
+     */
+    const SELF_SOURCED = /^(Product|Offer|Service|AggregateOffer|SoftwareApplication|Course|Event|JobPosting|Recipe|RealEstateListing)$/;
+    const judged = good.filter((p) => p.figureParagraphs > 0 && !p.schemaTypes.some((t) => SELF_SOURCED.test(t)));
+    if (judged.length) {
+      const sourced = judged.filter((p) => p.sourcePhrases > 0 || p.citedParagraphs > 0).length;
+      checks.push(row('sources', 'content', 'Sources named in the text', sourced === judged.length ? 'ok' : sourced ? 'warn' : 'bad',
+        `${sourced} of ${judged.length} page(s) carrying figures name where the figure comes from, in words or as an outbound link beside it${judged.length < good.length ? ` (${good.length - judged.length} page(s) not judged: no figures, or a product or service page whose own price is the source)` : ''}`,
+        sourced === judged.length ? '' : 'naming the source was the single strongest tested way to be quoted (Aggarwal et al., KDD 2024: +30 to +40%); it matters most on pages that are not already ranking first, which public signals cannot tell us'));
+    } else {
+      checks.push(row('sources', 'content', 'Sources named in the text', 'na',
+        'no sampled page carries a figure that would need a source',
+        'nothing to judge: a page without figures is not penalised for failing to source them'));
+    }
   }
   const dated = good.filter((p) => p.dates.modified || p.dates.published).length;
   if (good.length > 2) checks.push(row('dates', 'content', 'Publication dates exposed', dated ? 'ok' : 'warn', dated ? `${dated} of ${good.length} sampled pages expose dates` : 'no article dates in the sample: answer engines cannot tell what is current'));
