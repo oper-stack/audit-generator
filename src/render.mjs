@@ -171,7 +171,7 @@ function css() {
   :root { --ink:#14181c; --ink-2:#3b474d; --muted:#5c6b6f; --rule:#d8dedb; --paper:#fff; --panel:#f3f5f6; --accent:#0b7a75; --accent-soft:#dcefed; --gold:#8a6b38; --gold-soft:#f5efe3; --danger:#b3261e; --warn:#9a6700; --ok:#1f7a3d; --pad:16mm; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: "IBM Plex Sans", "Helvetica Neue", Helvetica, Arial, sans-serif; color: var(--ink); background: #e9ecec; font-size: 10.2pt; line-height: 1.5; }
-  .page { width: 210mm; min-height: 297mm; margin: 0 auto 8mm; background: var(--paper); padding: var(--pad) var(--pad) 22mm; position: relative; page-break-after: always; }
+  .page { width: 210mm; min-height: 297mm; margin: 0 auto 8mm; background: var(--paper); padding: var(--pad) var(--pad) 20mm; position: relative; page-break-after: always; }
   .page:last-child { page-break-after: auto; }
   h1, h2, h3 { font-family: "Fraunces", "Iowan Old Style", Georgia, serif; font-weight: 600; color: var(--ink); line-height: 1.15; }
   h2 { font-size: 19pt; margin-bottom: 4mm; padding-bottom: 2mm; border-bottom: 2px solid var(--accent-soft); }
@@ -186,6 +186,16 @@ function css() {
   .cover h1 { font-size: 34pt; margin: 2mm 0 4mm; }
   .cover-sub { font-size: 13pt; color: var(--ink-2); max-width: 85%; margin-bottom: 10mm; }
   .cover-url { display: inline-block; background: var(--accent-soft); color: var(--accent); padding: 2.5mm 4.5mm; border-radius: 4px; font-weight: 600; font-size: 11pt; }
+  /* Шапка первого листа вместо обложки: те же поля, но одной строкой и мелким кеглем. */
+  .masthead { border-top: 3px solid var(--accent); padding-top: 3.5mm; margin-bottom: 3.5mm; }
+  .masthead .cover-logo { max-height: 9mm; margin-bottom: 2.5mm; }
+  .mast-eyebrow { font-size: 7.5pt; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); font-weight: 600; margin: 0 0 1.5mm; }
+  .mast-title { font-family: "Fraunces", Georgia, serif; font-size: 20pt; line-height: 1.08; margin: 0 0 2mm; font-weight: 600; }
+  .mast-sub { font-size: 9pt; color: var(--ink-2); line-height: 1.45; margin: 0 0 2.5mm; max-width: 150mm; }
+  .mast-meta { display: grid; grid-template-columns: repeat(4, auto); gap: 0 9mm; justify-content: start; border-top: 1px solid var(--rule); padding-top: 2.5mm; }
+  .mast-meta dt { font-size: 6.8pt; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 0 0 .6mm; }
+  .mast-meta dd { font-size: 8.5pt; font-weight: 600; margin: 0; }
+  .tool-line { font-size: 7.5pt; color: var(--muted); line-height: 1.4; margin: 4mm 0 0; }
   .cover-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 6mm; margin-top: 14mm; padding-top: 6mm; border-top: 1px solid var(--rule); }
   .cover-meta dt { font-size: 7.5pt; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin-bottom: 1mm; }
   .cover-meta dd { font-size: 11pt; font-weight: 600; }
@@ -202,7 +212,7 @@ function css() {
    * Сводка: кольцо, пилюли, полосы. Те же пороги цвета, что на странице результата: 80 и 45.
    * Печать на бумагу, поэтому все размеры в миллиметрах и пунктах, а не в пикселях.
    */
-  .overall { display: flex; align-items: center; gap: 7mm; border: 1px solid var(--rule); border-radius: 5px; padding: 4mm 6mm; background: #fafbfb; margin: 5mm 0 4mm; }
+  .overall { display: flex; align-items: center; gap: 7mm; border: 1px solid var(--rule); border-radius: 5px; padding: 3.5mm 6mm; background: #fafbfb; margin: 4mm 0 3mm; }
   .ring { flex: none; color: var(--ok); }
   .ring.ring-fair { color: #d9a030; } .ring.ring-poor { color: #d2694f; } .ring.ring-na { color: var(--muted); }
   .ring-num { font-family: "Fraunces", Georgia, serif; font-size: 42px; font-weight: 600; fill: var(--ink); }
@@ -217,7 +227,7 @@ function css() {
   .overall-grade { font-family: "Fraunces", Georgia, serif; font-size: 14pt; font-weight: 600; margin: 0 0 1.5mm; }
   .overall-note { font-size: 8.5pt; color: var(--muted); line-height: 1.45; margin: 0; }
 
-  h3.engines-head, h3.areas-head { font-size: 11pt; margin: 6mm 0 2.5mm; }
+  h3.engines-head, h3.areas-head { font-size: 11pt; margin: 4.5mm 0 2.2mm; }
   .engines { display: grid; grid-template-columns: repeat(5, 1fr); gap: 2.2mm; }
   .eng { border: 1px solid var(--rule); border-radius: 4px; padding: 2.4mm 2.6mm; background: #fafbfb; }
   .eng p { margin: 0; }
@@ -317,7 +327,7 @@ export function toHtml(audit, brand = null) {
   const tone = (pct) => (pct === null ? 'na' : pct >= 80 ? 'good' : pct >= 45 ? 'fair' : 'poor');
   const RING_R = 58;
   const RING_C = 2 * Math.PI * RING_R;
-  const ring = (score) => `<svg class="ring ring-${tone(score)}" viewBox="0 0 148 148" width="118" height="118" role="img" aria-label="${score} ${esc(L.ofHundred || 'of 100')}">
+  const ring = (score) => `<svg class="ring ring-${tone(score)}" viewBox="0 0 148 148" width="104" height="104" role="img" aria-label="${score} ${esc(L.ofHundred || 'of 100')}">
       <circle cx="74" cy="74" r="${RING_R}" fill="none" stroke="#ECE9E2" stroke-width="12"/>
       <circle cx="74" cy="74" r="${RING_R}" fill="none" stroke="currentColor" stroke-width="12" stroke-linecap="round"
               stroke-dasharray="${RING_C.toFixed(1)}" stroke-dashoffset="${(RING_C * (1 - score / 100)).toFixed(1)}" transform="rotate(-90 74 74)"/>
@@ -358,13 +368,17 @@ export function toHtml(audit, brand = null) {
   const pages = [];
   const logo = brand && brand.logo ? `<img class="cover-logo" src="${brand.logo}" alt="">` : '';
   const preparedBy = (brand && brand.preparedBy) || a.client.preparedBy || 'OperStack';
-  const toolLine = !brand || brand.showToolLine !== false
-    ? `<div class="cover-foot">${esc(L.collectedBy(a.meta.tool, (a.meta.collectedAt || '').slice(0, 10)))}</div>`
-    : `<div class="cover-foot">${esc(L.reproducible)}</div>`;
-  pages.push(`<div class="page"><div class="cover"><div><div class="cover-top">${logo}<div class="eyebrow">${L.eyebrowAudit}</div><h1>${L.coverTitle}</h1><p class="cover-sub">${t(a.client.subject)}</p><span class="cover-url">${esc(a.meta.host)}</span></div>
-    <dl class="cover-meta"><div><dt>${L.auditSubject}</dt><dd>${t(a.client.name)}</dd></div><div><dt>${L.reportDate}</dt><dd>${esc(a.client.reportDate)}</dd></div><div><dt>${L.auditType}</dt><dd>${esc(a.meta.auditType)}</dd></div><div><dt>${L.preparedBy}</dt><dd>${esc(preparedBy)}</dd></div></dl></div>
-    ${toolLine}</div></div>`);
-  n++;
+  /*
+   * Обложки отдельным листом больше нет: заголовок уменьшен и стоит шапкой первого листа.
+   *
+   * Лист, на котором только название и четыре поля, в отчёте на двенадцать страниц никто не
+   * читает. Замерено перед правкой: содержимое ровно влезает в лист, перелива ноль. Строка про
+   * предмет обрезается по длине, иначе длинное описание чужого сайта вытолкнет низ листа на
+   * следующую страницу, и мы вернёмся к тому, от чего уходили.
+   */
+  const subjectText = t(a.client.subject);
+  const subjectShort = subjectText.length > 190 ? `${subjectText.slice(0, 187).trimEnd()}\u2026` : subjectText;
+  const masthead = `<div class="masthead">${logo}<p class="mast-eyebrow">${L.eyebrowAudit}</p><h1 class="mast-title">${L.coverTitle.replace(/<br>/g, ' ')}</h1><p class="mast-sub">${subjectShort}</p><dl class="mast-meta"><div><dt>${L.auditSubject}</dt><dd>${t(a.client.name)}</dd></div><div><dt>${L.reportDate}</dt><dd>${esc(a.client.reportDate)}</dd></div><div><dt>${L.auditType}</dt><dd>${esc(a.meta.auditType)}</dd></div><div><dt>${L.preparedBy}</dt><dd>${esc(preparedBy)}</dd></div></dl></div>`;
   /*
    * Сводка занимает ДВА листа намеренно, а не один с переливом.
    *
@@ -373,9 +387,25 @@ export function toHtml(audit, brand = null) {
    * выглядело это как недоделанная работа. Теперь первый лист про балл и из чего он сложился,
    * второй про проверки самого отчёта и что делать. Оба полные.
    */
-  pages.push(`<div class="page">${header(a, L.secSummary, L)}<div class="eyebrow">${L.summaryEyebrow}</div><h2>${L.secSummary}</h2><p class="lead">${t(a.summary.lead)}</p>${overallBlock}${footer(a, n++, preparedBy)}</div>`);
+  pages.push(`<div class="page">${masthead}<div class="eyebrow">${L.summaryEyebrow}</div><h2>${L.secSummary}</h2><p class="lead">${t(a.summary.lead)}</p>${overallBlock}${footer(a, n++, preparedBy)}</div>`);
   pages.push(`<div class="page">${header(a, L.secSummary, L)}<div class="eyebrow">${L.summaryEyebrow}</div><h2>${L.secondMeasure}</h2><div class="scorecard">${scoreCards}</div><p class="scorecard-foot">${L.scorecardFoot}</p><div class="verdict"><p><strong>${L.keyTakeaway}</strong> ${t(a.summary.verdict)}</p></div><h3>${L.threePriorities}</h3>${olist(a.summary.priorities)}${footer(a, n++, preparedBy)}</div>`);
-  pages.push(`<div class="page">${header(a, L.secOverview, L)}<div class="eyebrow">${L.overviewEyebrow}</div><h2>${L.whatSiteIs}</h2><table><tr><th>${L.parameter}</th><th>${L.value}</th></tr>${(a.overview.rows || []).map(([k, v]) => `<tr><td>${t(k)}</td><td>${t(v)}</td></tr>`).join('')}</table><p>${t(a.overview.note)}</p><h3>${L.pagesSampled}</h3><table class="pages"><tr><th>${L.colUrl}</th><th>${L.colTitle}</th><th>${L.colWords}</th><th>H2</th><th>${L.colTables || 'Tables'}</th><th>${L.colLinks || 'Links'}</th><th>Alt</th></tr>${(a.sample || []).filter((p) => p.title !== undefined).slice(0, 14).map((p) => `<tr><td><code>${esc(new URL(p.url).pathname)}</code></td><td>${esc(p.title)}</td><td>${p.words}</td><td>${p.h2Count ?? '·'}</td><td>${p.tables ?? '·'}</td><td>${p.linkCount ?? '·'}</td><td>${p.images ? `${p.images - p.imagesNoAlt}/${p.images}` : '·'}</td></tr>`).join('')}</table>${footer(a, n++, preparedBy)}</div>`);
+  /*
+   * Обзор: таблица прочитанных страниц не влезала на лист и переливалась. Режем её по счёту
+   * строк, как техническую. Первый лист несёт параметры сайта и первые строки, дальше только
+   * продолжение таблицы со своей шапкой.
+   */
+  const sampleRows = (a.sample || []).filter((x) => x.title !== undefined).slice(0, 20);
+  const pagesHead = `<tr><th>${L.colUrl}</th><th>${L.colTitle}</th><th>${L.colWords}</th><th>H2</th><th>${L.colTables || 'Tables'}</th><th>${L.colLinks || 'Links'}</th><th>Alt</th></tr>`;
+  const pageRow = (x) => `<tr><td><code>${esc(new URL(x.url).pathname)}</code></td><td>${esc(x.title)}</td><td>${x.words}</td><td>${x.h2Count ?? '\u00b7'}</td><td>${x.tables ?? '\u00b7'}</td><td>${x.linkCount ?? '\u00b7'}</td><td>${x.images ? `${x.images - x.imagesNoAlt}/${x.images}` : '\u00b7'}</td></tr>`;
+  const FIRST_PAGE_ROWS = 7;
+  const NEXT_PAGE_ROWS = 16;
+  const firstRows = sampleRows.slice(0, FIRST_PAGE_ROWS);
+  const restRows = sampleRows.slice(FIRST_PAGE_ROWS);
+  pages.push(`<div class="page">${header(a, L.secOverview, L)}<div class="eyebrow">${L.overviewEyebrow}</div><h2>${L.whatSiteIs}</h2><table><tr><th>${L.parameter}</th><th>${L.value}</th></tr>${(a.overview.rows || []).map(([k, v]) => `<tr><td>${t(k)}</td><td>${t(v)}</td></tr>`).join('')}</table><p>${t(a.overview.note)}</p><h3>${L.pagesSampled}</h3><table class="pages">${pagesHead}${firstRows.map(pageRow).join('')}</table>${footer(a, n++, preparedBy)}</div>`);
+  for (let i = 0; i < restRows.length; i += NEXT_PAGE_ROWS) {
+    const chunk = restRows.slice(i, i + NEXT_PAGE_ROWS);
+    pages.push(`<div class="page">${header(a, L.secOverview, L)}<div class="eyebrow">${L.overviewEyebrow}</div><h2>${L.pagesSampled}</h2><table class="pages">${pagesHead}${chunk.map(pageRow).join('')}</table>${footer(a, n++, preparedBy)}</div>`);
+  }
   const cardBody = (c) => [
     c.text ? `<p>${t(c.text)}</p>` : '',
     c.cost ? `<p><span class="card-tag">${L.whatItCosts}</span>${t(c.cost)}</p>` : '',
@@ -417,12 +447,37 @@ export function toHtml(audit, brand = null) {
   });
   pages.push(`<div class="page">${header(a, L.secContent, L)}<div class="eyebrow">${L.contentEyebrow}</div><h2>${L.contentTitle}</h2><div class="two-col"><div><h3>${L.strengths}</h3>${list(a.content.strengths)}</div><div><h3>${L.weaknesses}</h3>${list(a.content.weaknesses)}</div></div><h3>${L.gaps}</h3>${list(a.content.gaps)}${checksBy('content').length ? `<table><tr><th>${L.colCheck}</th><th>${L.colStatus}</th><th>${L.colFinding}</th></tr>${checksBy('content').map((c) => `<tr><td>${esc(c.label)}</td>${statusCell(c.status, L)}<td>${esc(c.value)}</td></tr>`).join('')}</table>` : ''}${footer(a, n++, preparedBy)}</div>`);
   const geoRows = [...checksBy('aeo'), ...checksBy('geo')].map((c) => `<tr><td>${esc(c.label)}</td>${statusCell(c.status, L)}<td>${esc(c.value)}${c.comment ? `. ${esc(c.comment.charAt(0).toUpperCase() + c.comment.slice(1))}` : ''}</td></tr>`).join('') + (a.geo.rows || []).map(([k, s, d]) => `<tr><td>${t(k)}</td><td>${t(s)}</td><td>${t(d)}</td></tr>`).join('');
-  pages.push(`<div class="page">${header(a, L.secAeo, L)}<div class="eyebrow">${L.aeoEyebrow}</div><h2>${L.aeoTitle}</h2><p class="lead">Whether the site's answers can be lifted into "People also ask", AI overviews, ChatGPT and Perplexity.</p><div class="two-col"><div><h3>${L.aeoWorks}</h3>${list(a.aeo.works)}</div><div><h3>${L.aeoBlocks}</h3>${list(a.aeo.blocks)}</div></div><div class="callout"><p><strong>${L.recommendation}</strong> ${t(a.aeo.recommendation)}</p></div><h2>${L.geoTitle}</h2><table><tr><th>${L.colSignal}</th><th>${L.colStatus}</th><th>${L.colDetail}</th></tr>${geoRows}</table><div class="callout"><p>${t(a.geo.callout)}</p></div>${footer(a, n++, preparedBy)}</div>`);
-  const checkTable = (g) => (checksBy(g).length ? `<table><tr><th>${L.colCheck}</th><th>${L.colStatus}</th><th>${L.colFinding}</th></tr>${checksBy(g).map((c) => `<tr><td>${esc(c.label)}</td>${statusCell(c.status, L)}<td>${esc(c.value)}${c.comment ? `<br><span style="color:var(--muted)">${esc(c.comment)}</span>` : ''}</td></tr>`).join('')}</table>` : '');
   const sources = [...(a.sources || []), ...(a.demand && Array.isArray(a.demand.queries) ? [demandSourceRow(a.demand, a.meta?.lang === 'ru' ? 'ru' : 'en')] : [])];
-  pages.push(`<div class="page">${header(a, L.secOffpage, L)}<div class="eyebrow">${L.offpageEyebrow}</div><h2>${L.offpageTitle}</h2>${checkTable('offpage')}${list(a.offpage.listed)}<p>${t(a.offpage.note)}</p><div class="eyebrow" style="margin-top:8mm">${L.conversionEyebrow}</div><h2>${L.conversionTitle}</h2>${checkTable('conversion')}<table><tr><th>${L.colElement}</th><th>${L.colStatus}</th></tr>${(a.conversion.rows || []).map(([k, v]) => `<tr><td>${t(k)}</td><td>${t(v)}</td></tr>`).join('')}</table><div class="eyebrow" style="margin-top:8mm">${L.limitationsEyebrow}</div><h2>${L.sourcesTitle}</h2>${sources.length ? `<table><tr><th>${L.colSource}</th><th>${L.colAccess}</th><th>${L.colWhatRead}</th></tr>${sources.map((s) => `<tr><td>${t(s.name)}</td><td>${t(s.access)}</td><td>${t(s.detail)}</td></tr>`).join('')}</table><p class="scorecard-foot">${L.sourcesFoot}</p>` : ''}<h3>${L.limitations}</h3>${list(a.limitations)}${footer(a, n++, preparedBy)}</div>`);
-  const phases = (a.roadmap || []).map((p) => `<div class="phase"><div class="phase-head"><span class="badge">${esc(p.badge)}</span><span class="phase-title">${t(p.title)}</span></div>${olist(p.items)}</div>`).join('');
-  pages.push(`<div class="page">${header(a, L.secRoadmap, L)}<div class="eyebrow">${L.roadmapEyebrow}</div><h2>${L.roadmapTitle}</h2>${phases}<div class="verdict"><p><strong>${L.keyMessage}</strong> ${t(a.closing)}</p></div>${footer(a, n++, preparedBy)}</div>`);
+  const checkTable = (g) => (checksBy(g).length ? `<table><tr><th>${L.colCheck}</th><th>${L.colStatus}</th><th>${L.colFinding}</th></tr>${checksBy(g).map((c) => `<tr><td>${esc(c.label)}</td>${statusCell(c.status, L)}<td>${esc(c.value)}${c.comment ? `<br><span style="color:var(--muted)">${esc(c.comment)}</span>` : ''}</td></tr>`).join('')}</table>` : '');
+  /*
+   * AEO и GEO стояли на одном листе: два заголовка, два списка, две врезки и таблица сигналов.
+   * Лист переливал почти на восемьсот пикселей. Теперь по разделу на лист.
+   */
+  pages.push(`<div class="page">${header(a, L.secAeo, L)}<div class="eyebrow">${L.aeoEyebrow}</div><h2>${L.aeoTitle}</h2><p class="lead">${esc(L.aeoLead)}</p><div class="two-col"><div><h3>${L.aeoWorks}</h3>${list(a.aeo.works)}</div><div><h3>${L.aeoBlocks}</h3>${list(a.aeo.blocks)}</div></div><div class="callout"><p><strong>${L.recommendation}</strong> ${t(a.aeo.recommendation)}</p></div>${footer(a, n++, preparedBy)}</div>`);
+  /*
+   * Таблица сигналов GEO выросла до двадцати пяти строк и на лист не влезает. Режем её, как и
+   * остальные длинные таблицы: по счёту строк, с продолжением под своим номером.
+   */
+  const geoRowList = [...checksBy('geo'), ...checksBy('overview')].map((c) => `<tr><td>${esc(c.label)}</td>${statusCell(c.status, L)}<td>${esc(c.value)}${c.comment ? `<br><span style="color:var(--muted)">${esc(c.comment)}</span>` : ''}</td></tr>`);
+  const geoHead = `<tr><th>${L.colSignal}</th><th>${L.colStatus}</th><th>${L.colDetail}</th></tr>`;
+  const GEO_ROWS_PER_PAGE = 15;
+  const geoChunks = [];
+  for (let i = 0; i < geoRowList.length; i += GEO_ROWS_PER_PAGE) geoChunks.push(geoRowList.slice(i, i + GEO_ROWS_PER_PAGE));
+  (geoChunks.length ? geoChunks : [[]]).forEach((chunk, i, all) => {
+    const title = all.length > 1 ? `${L.geoTitle} (${i + 1}/${all.length})` : L.geoTitle;
+    const tail = i === all.length - 1 ? `<div class="callout"><p>${t(a.geo.callout)}</p></div>` : '';
+    pages.push(`<div class="page">${header(a, L.secAeo, L)}<div class="eyebrow">${L.aeoEyebrow}</div><h2>${esc(title)}</h2><table>${geoHead}${chunk.join('')}</table>${tail}${footer(a, n++, preparedBy)}</div>`);
+  });
+  pages.push(`<div class="page">${header(a, L.secOffpage, L)}<div class="eyebrow">${L.offpageEyebrow}</div><h2>${L.offpageTitle}</h2>${checkTable('offpage')}${list(a.offpage.listed)}<p>${t(a.offpage.note)}</p>${footer(a, n++, preparedBy)}</div>`);
+  pages.push(`<div class="page">${header(a, L.secOffpage, L)}<div class="eyebrow">${L.conversionEyebrow}</div><h2>${L.conversionTitle}</h2>${checkTable('conversion')}<table><tr><th>${L.colElement}</th><th>${L.colStatus}</th></tr>${(a.conversion.rows || []).map(([k, v]) => `<tr><td>${t(k)}</td><td>${t(v)}</td></tr>`).join('')}</table>${footer(a, n++, preparedBy)}</div>`);
+
+  const phases = (a.roadmap || []).map((x) => `<div class="phase"><div class="phase-head"><span class="badge">${esc(x.badge)}</span><span class="phase-title">${t(x.title)}</span></div>${olist(x.items)}</div>`).join('');
+  /*
+   * Последний лист несёт и дорожную карту, и источники с границами замера. Оба раздела короткие,
+   * по отдельности каждый занимал меньше половины листа, и владелец просил ровно двенадцать.
+   * Проверено замером: вместе влезают без перелива.
+   */
+  pages.push(`<div class="page">${header(a, L.secRoadmap, L)}<div class="eyebrow">${L.roadmapEyebrow}</div><h2>${L.roadmapTitle}</h2>${phases}<div class="verdict"><p><strong>${L.keyMessage}</strong> ${t(a.closing)}</p></div><div class="eyebrow" style="margin-top:7mm">${L.limitationsEyebrow}</div><h2>${L.sourcesTitle}</h2>${sources.length ? `<table><tr><th>${L.colSource}</th><th>${L.colAccess}</th><th>${L.colWhatRead}</th></tr>${sources.map((x) => `<tr><td>${t(x.name)}</td><td>${t(x.access)}</td><td>${t(x.detail)}</td></tr>`).join('')}</table><p class="scorecard-foot">${L.sourcesFoot}</p>` : ''}<h3>${L.limitations}</h3>${list(a.limitations)}<p class="tool-line">${esc(brand && brand.showToolLine === false ? L.reproducible : L.collectedBy(a.meta.tool, (a.meta.collectedAt || '').slice(0, 10)))}</p>${footer(a, n++, preparedBy)}</div>`);
   // Карта спроса идёт приложением после дорожной карты: она не входит в баллы, и об этом
   // сказано в ней самой и в таблице источников выше.
   if (a.demand && Array.isArray(a.demand.queries)) {
