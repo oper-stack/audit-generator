@@ -1,3 +1,5 @@
+<img src="https://raw.githubusercontent.com/oper-stack/brand/main/og-audit.png" alt="OperStack audit-generator" width="100%">
+
 # @operstack/audit
 
 The SEO, AEO and GEO audit generator behind the OperStack audit service. It collects the public signals of a site into one JSON file, leaves the narrative to an analyst or an agent, and renders a print-ready report.
