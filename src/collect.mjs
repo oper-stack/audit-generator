@@ -38,6 +38,72 @@ async function get(url, { method = 'GET', timeout = REQUEST_TIMEOUT } = {}) {
   finally { clearTimeout(t); }
 }
 
+/**
+ * Вы и ваши конкуренты: тот же замер по чужим сайтам, чтобы число стало относительным.
+ *
+ * Простым языком. «88 из 100» само по себе ничего не говорит: много это или мало, видно только
+ * рядом с теми, у кого покупатель выбирает. Поэтому конкуренты читаются ТЕМ ЖЕ кодом.
+ *
+ * Конкуренты читаются по десять страниц, а свой сайт по сто: доли в проверках считаются от
+ * разного, и об этом сказано в отчёте прямо. Балл видимости у всех читается по десяти страницам
+ * одинаково, вот его сравнивать можно, и он стоит в таблице первым.
+ *
+ * Пятеро это потолок: шестой столбец в лист A4 уже не помещается, а таблица, которая не
+ * помещается, это таблица, которую не читают.
+ */
+export const RIVALS_MAX = 5;
+
+export async function compareRivals(rivals, { pages = 10, lang = 'en', pageDelayMs = 400, log = () => {} } = {}) {
+  const hosts = [...new Set((rivals || []).map((x) => String(x || '').trim()).filter(Boolean))].slice(0, RIVALS_MAX);
+  const out = [];
+  for (const raw of hosts) {
+    const url = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+    log(`конкурент ${raw}`);
+    try {
+      const a = await collect(url, { pages, lang, rendered: false, pageDelayMs, log: () => {} });
+      out.push({
+        host: a.meta.host,
+        reachable: a.meta.reachable !== false,
+        score: a.overall?.score ?? null,
+        grade: a.overall?.grade ?? null,
+        areas: (a.overall?.areas || []).map((x) => ({ id: x.id, label: x.label, score: x.score, max: x.max })),
+        seo: a.overall?.seo?.score ?? null,
+        reportScores: a.scores || {},
+        pagesRead: a.reading?.read ?? null,
+        status: a.meta.homeStatus ?? null,
+      });
+    } catch (e) {
+      // Сайт не ответил, значит в таблице стоит прочерк и причина, а не выдуманный ноль.
+      out.push({ host: raw, reachable: false, score: null, grade: null, areas: [], seo: null, reportScores: {}, pagesRead: 0, error: e.message });
+    }
+  }
+  return out;
+}
+
+/*
+ * Вежливое чтение чужого сайта.
+ *
+ * Страницы читаются по одной, но без паузы это примерно семь запросов в секунду, и защита сайта
+ * видит в этом не аудит, а обход. Мы на этом уже горели: собственный Vercel начинал отдавать 403
+ * на наши же прогоны. На двадцати страницах это сходило с рук, на ста не сойдёт.
+ *
+ * Поэтому три вещи. Пауза между страницами опускает темп до двух запросов в секунду. Crawl-delay
+ * из robots.txt слушается, если сайт его назвал: это его правило, и оно старше нашего удобства.
+ * И отказ не игнорируется: на 429 или 403 пауза удваивается, а после трёх отказов подряд чтение
+ * останавливается, и в отчёт идёт «прочитано столько из стольких», а не тишина.
+ */
+const sleep = (ms) => (ms > 0 ? new Promise((r) => setTimeout(r, ms)) : Promise.resolve());
+
+/** Crawl-delay из robots.txt в миллисекундах, с потолком: 30 секунд на страницу это не аудит. */
+export function crawlDelayFrom(robotsText, capMs = 3000) {
+  const found = [...String(robotsText || '').matchAll(/^crawl-delay:\s*([\d.]+)/gim)]
+    .map((m) => Number(m[1]))
+    .filter((n) => Number.isFinite(n) && n > 0);
+  if (!found.length) return { ms: 0, asked: 0, capped: false };
+  const asked = Math.max(...found) * 1000;
+  return { ms: Math.min(asked, capMs), asked, capped: asked > capMs };
+}
+
 async function follow(url, max = 5) {
   const hops = [];
   let cur = url;
@@ -141,6 +207,7 @@ function analysePage(url, html) {
     telephone: /"telephone"\s*:/.test(ld) || telLinks > 0,
     email: /"email"\s*:/.test(ld) || mailLinks > 0,
     sameAs: [...new Set(sameAs.map((u) => { try { return new URL(u).host.replace(/^www\./, ''); } catch { return ''; } }).filter(Boolean))],
+    sameAsUrls: [...new Set(sameAs)],
     aboutPage: hrefsLower.some((h) => /\/(about|about-us|our-story|team|company|o-nas)\/?($|[?#])/.test(h)),
     policyPages: [...new Set(hrefsLower.filter((h) => /\/(privacy|privacy-policy|terms|terms-of-use|legal|cookie|cookies|disclaimer)/.test(h)).map((h) => (h.match(/\/(privacy|terms|legal|cookie|disclaimer)/) || [])[1]).filter(Boolean))],
     author: /"author"\s*:/.test(ld),
@@ -220,7 +287,7 @@ async function readSitemap(startUrl, { maxFiles = 6, budgetMs = 45000, maxUrls =
 
 export const __readSitemap = readSitemap;
 
-export async function collect(startUrl, { pages = 20, log = () => {}, backlinks = null, lang = 'en', rendered = false, renderedPages = 3, preparedBy = '', visibility: givenVisibility = null, requestTimeout = 15000, sitemapBudgetMs = 45000, sitemapMaxFiles = 6 } = {}) {
+export async function collect(startUrl, { pages = 20, pageDelayMs = 400, log = () => {}, backlinks = null, lang = 'en', rendered = false, renderedPages = 3, preparedBy = '', visibility: givenVisibility = null, requestTimeout = 15000, sitemapBudgetMs = 45000, sitemapMaxFiles = 6, tier = '' } = {}) {
   REQUEST_TIMEOUT = requestTimeout;
   const opts = { backlinks };
   const origin = new URL(startUrl).origin;
@@ -411,13 +478,30 @@ export async function collect(startUrl, { pages = 20, log = () => {}, backlinks 
   const TRUST_PAGE = /\/(contact|contacts|contact-us|kontakt|kontakty|about|about-us|o-nas|team|company|privacy|privacy-policy|politika[a-z-]*|terms|terms-of-use|usloviya|oferta|legal|impressum)\/?$/i;
   const trustFirst = rest.filter((u) => { try { return TRUST_PAGE.test(new URL(u).pathname); } catch { return false; } });
   const pool = [home.final, ...trustFirst, ...rest.filter((u) => !trustFirst.includes(u))];
+  const wanted = pool.slice(0, pages);
+  const politeness = crawlDelayFrom(robots.ok ? robots.text : '');
+  let gap = Math.max(pageDelayMs, politeness.ms);
   const sample = [];
-  for (const u of pool.slice(0, pages)) {
+  let refusedInARow = 0;
+  let stoppedAt = null;
+  for (let i = 0; i < wanted.length; i += 1) {
+    const u = wanted[i];
+    if (i > 0) await sleep(gap);
     const r = await get(u);
+    // 429 и 403 это «притормози», а не «страницы нет». Удваиваем паузу и считаем отказы подряд:
+    // три подряд означают, что сайт нас закрыл, и дальше мы только злим его защиту.
+    if (r.status === 429 || r.status === 403) {
+      refusedInARow += 1;
+      gap = Math.min(gap * 2 || 1000, 8000);
+      if (refusedInARow >= 3) { stoppedAt = i; break; }
+    } else if (r.ok) {
+      refusedInARow = 0;
+    }
     if (r.ok && /html/i.test(r.type)) sample.push(analysePage(u, r.text));
     else if (r.status >= 300 && r.status < 400) sample.push({ url: u, redirect: r.location, status: r.status });
     else sample.push({ url: u, status: r.status, error: r.error });
   }
+  const reading = { wanted: wanted.length, read: sample.filter((x) => x.title !== undefined).length, stoppedAt, gapMs: gap, crawlDelay: politeness };
   const good = sample.filter((p) => p.title !== undefined);
   const hp = homePage || good[0];
 
@@ -561,6 +645,16 @@ export async function collect(startUrl, { pages = 20, log = () => {}, backlinks 
   checks.push(row('trust-contact', 'offpage', 'Direct contact details', channels.length >= 2 ? 'ok' : channels.length ? 'warn' : 'bad', channels.length ? channels.join(' and ') : 'no phone, email or messenger is published'));
   const ownHost = host.replace(/^www\./, '');
   const profiles = [...new Set(pagesForTrust.flatMap((p) => p.trust?.sameAs || []))].filter((h) => h !== ownHost && !h.endsWith(`.${ownHost}`));
+  /*
+   * Для готовой разметки нужен адрес профиля, а не домен: «https://x.com» это не страница компании,
+   * а сам сайт. И список сужается до площадок, где профиль вообще бывает: сайт нередко перечисляет
+   * в своём sameAs партнёров и застройщиков, а вставить их в свою разметку значит сказать
+   * поисковику, что это одна и та же организация. Поэтому берём только профили и только с путём.
+   */
+  const PROFILE_HOST = /^(instagram\.com|facebook\.com|fb\.com|x\.com|twitter\.com|linkedin\.com|youtube\.com|threads\.net|tiktok\.com|t\.me|telegram\.me|vk\.com|ok\.ru|dzen\.ru|pinterest\.[a-z.]+|wikidata\.org|crunchbase\.com|yelp\.com|trustpilot\.com|github\.com|behance\.net|maps\.google\.[a-z.]+|g\.page)$/i;
+  const profileUrls = [...new Set(pagesForTrust.flatMap((p) => p.trust?.sameAsUrls || []))].filter((u) => {
+    try { const x = new URL(u); return PROFILE_HOST.test(x.host.replace(/^www\./, '')) && x.pathname.replace(/\/+$/, '').length > 1; } catch { return false; }
+  });
   checks.push(row('trust-profiles', 'offpage', 'Profiles the site claims elsewhere', profiles.length >= 2 ? 'ok' : profiles.length ? 'warn' : 'bad', profiles.length ? `${profiles.length}: ${profiles.slice(0, 5).join(', ')}` : 'no sameAs links: the site claims no profile anywhere else', profiles.length ? '' : 'the cheapest off-site signal there is, and it is free'));
   const about = anyTrust((p) => p.trust?.aboutPage);
   checks.push(row('trust-about', 'offpage', 'A page that says who is behind the site', about ? 'ok' : 'warn', about ? 'linked from the sampled pages' : 'no about or team page is linked'));
@@ -656,7 +750,7 @@ export async function collect(startUrl, { pages = 20, log = () => {}, backlinks 
   const critical = checks.filter((c) => c.status === 'bad').map((c) => ({ title: c.label, text: `${c.value}${c.comment ? `. ${c.comment}` : ''}`, level: 'bad' }));
 
   return {
-    meta: { site: home.final, host, reachable: homeAnswered, collectedAt: new Date().toISOString(), tool: `@operstack/audit ${VERSION}`, auditType: lang === 'ru' ? 'Аудит по публичным сигналам' : 'External audit (no Search Console or analytics access)', lang, language: hp ? (hp.og?.locale || '') : '' },
+    meta: { site: home.final, host, reachable: homeAnswered, homeStatus: home.response.status || 0, collectedAt: new Date().toISOString(), tool: `@operstack/audit ${VERSION}`, tier, auditType: lang === 'ru' ? 'Аудит по публичным сигналам' : 'External audit (no Search Console or analytics access)', lang, language: hp ? (hp.og?.locale || '') : '' },
     client: { name: '{{CLIENT NAME}}', subject: '{{What the site sells and where}}', reportDate: new Date().toISOString().slice(0, 10), preparedBy: preparedBy || process.env.OPERSTACK_PREPARED_BY || 'OperStack' },
     overall,
     reportScore,
@@ -684,7 +778,10 @@ export async function collect(startUrl, { pages = 20, log = () => {}, backlinks 
     closing: '{{Key message for the client in three sentences.}}',
     // В выборке остаётся и то, из чего считается работа с текстами: без этих полей пакет
     // Foundation пришлось бы оценивать на глаз, как раньше оценивался Fix.
-    sample: sample.map((p) => p.title !== undefined ? { url: p.url, title: p.title, words: p.words, h1Count: p.h1Count, linkCount: Array.isArray(p.links) ? p.links.length : null, images: p.images, imagesNoAlt: p.imagesNoAlt, schemaTypes: p.schemaTypes, answerFirst: p.answerFirst, sourcePhrases: p.sourcePhrases, citedParagraphs: p.citedParagraphs, figureParagraphs: p.figureParagraphs, h2Count: p.h2Count, tables: p.tables, firstParaWords: p.firstParaWords, dates: p.dates } : p),
+    reading,
+    /* Сырьё для готовых файлов: профили, которые сайт сам про себя заявляет, и есть ли контакты. */
+    entity: { profiles: profileUrls, hosts: profiles, telephone: Boolean(hp?.trust?.telephone), email: Boolean(hp?.trust?.email) },
+    sample: sample.map((p) => p.title !== undefined ? { url: p.url, title: p.title, description: p.description, h1: p.h1, firstPara: p.firstPara, words: p.words, h1Count: p.h1Count, linkCount: Array.isArray(p.links) ? p.links.length : null, images: p.images, imagesNoAlt: p.imagesNoAlt, schemaTypes: p.schemaTypes, answerFirst: p.answerFirst, sourcePhrases: p.sourcePhrases, citedParagraphs: p.citedParagraphs, figureParagraphs: p.figureParagraphs, h2Count: p.h2Count, tables: p.tables, firstParaWords: p.firstParaWords, dates: p.dates } : p),
     notes,
   };
 }

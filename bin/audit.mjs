@@ -24,7 +24,8 @@
  * Scores are never typed by hand: the report always prints what the collected checks give,
  * and an area with no checks is printed as "not measured" rather than scored low.
  */
-import { collect, verifyScores } from '../src/collect.mjs';
+import { collect, verifyScores, compareRivals } from '../src/collect.mjs';
+import { buildLlmsTxt, buildOrganisationSchema, fixTitlesAndDescriptions } from '../src/handover.mjs';
 import { buildFixPlan, renderFixPlan, renderFixChecklist, buildFixReport, renderFixReport } from '../src/fix.mjs';
 import { buildFoundationScope, renderFoundationScope, renderFoundationChecklist } from '../src/foundation.mjs';
 import { draftNarrative, stillEmpty } from '../src/narrative.mjs';
@@ -33,17 +34,26 @@ import { render, checkNarrative } from '../src/render.mjs';
 import { buildDemandMap, renderDemandMarkdown, demandCsv } from '../src/demand.mjs';
 import { resolveBranding } from '../src/agency.mjs';
 import { rank, readList, runBatch, runProspect, split, summarise, toCsv, toMarkdown } from '../src/batch.mjs';
-import { writeFileSync, readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { writeFileSync, readFileSync, mkdirSync } from 'node:fs';
+import { resolve, join } from 'node:path';
 
 const [cmd, target, ...rest] = process.argv.slice(2);
+/*
+ * Сколько страниц читает каждый платный тариф. Аудит за 149 обещает сто, и набирать это число
+ * руками каждый раз означает рано или поздно его забыть и отдать двадцать вместо ста.
+ * Автоматические ступени за 9 и 29 живут в ops-notify и сюда не приходят.
+ */
+const PAGES_BY_TIER = { audit: 100 };
+
 const opt = (k, d) => { const i = rest.indexOf(k); return i === -1 ? d : rest[i + 1]; };
 const has = (k) => rest.includes(k);
 
 if (!cmd || cmd === '--help' || cmd === '-h') {
   console.log([
     'Usage:',
-    '  operstack-audit collect <url> [--pages 20] [--out audit.json] [--lang ru] [--no-rendered]',
+    '  operstack-audit collect <url> [--pages 20 | --tier audit] [--rivals "a.com,b.com"] [--out audit.json] [--lang ru] [--no-rendered]',
+    '      --tier audit reads 100 pages: that is what the 149 audit promises, and typing it by hand is how it gets forgotten',
+    '      --rivals reads up to five competitors with the same code and prints them beside you',
     '      collect the public signals of a site into audit.json; a real browser also measures how',
     '      much of the text is invisible without JavaScript (--no-rendered skips that)',
     '  operstack-audit render <audit.json> [--out report.html] [--pdf]',
@@ -57,6 +67,8 @@ if (!cmd || cmd === '--help' || cmd === '-h') {
     '      autocomplete, volumes from Topvisor (TOPVISOR_USER_ID and TOPVISOR_KEY in env, --dry only prices it),',
     '      --attach writes the map into audit.json so render prints it as an appendix',
     '  operstack-audit check <audit.json>',
+    '  operstack-audit handover <audit.json> [--out dir] [--lang ru|en]',
+    '      the files the buyer pastes: llms.txt, the Organization markup and the title fixes',
     '      list narrative fields still holding placeholders and any score the checks do not support',
     '',
     '  operstack-audit fix-plan <audit.json> [--platform files|cms] [--lang ru|en] [--price 249] [--out base]',
@@ -93,11 +105,16 @@ if (cmd === 'collect') {
   // В платном аудите она нужна всегда: именно здесь мы можем соврать про чужой сайт. Выключается
   // флагом --no-rendered, например когда браузера нет или прогон идёт по расписанию.
   const audit = await collect(target, {
-    pages: Number(opt('--pages', 20)), backlinks, lang: opt('--lang', 'en'),
+    pages: Number(opt('--pages', PAGES_BY_TIER[opt('--tier', '')] ?? 20)), tier: opt('--tier', ''), backlinks, lang: opt('--lang', 'en'),
     rendered: !has('--no-rendered'), renderedPages: Number(opt('--rendered-pages', 3)),
     preparedBy: opt('--by', ''),
     log: (m) => console.error(`  ${m}`),
   });
+  /* Конкуренты читаются тем же кодом и кладутся в тот же файл: отчёту больше ничего не нужно. */
+  const rivalList = String(opt('--rivals', '')).split(',').map((x) => x.trim()).filter(Boolean);
+  if (rivalList.length) {
+    audit.rivals = await compareRivals(rivalList, { lang: opt('--lang', 'en'), log: (m) => console.error(`  ${m}`) });
+  }
   const out = resolve(opt('--out', 'audit.json'));
   writeFileSync(out, JSON.stringify(audit, null, 2));
   console.log(`wrote ${out}: ${audit.checks.length} checks, ${audit.sample.length} pages sampled, scores ${Object.entries(audit.scores).map(([k, v]) => `${k} ${v === null ? 'not measured' : v}`).join(', ')}`);
@@ -141,6 +158,31 @@ if (cmd === 'collect') {
   console.log(`wrote ${out} (${html.length} bytes)${pdf ? `\nwrote ${pdf}` : ''}`);
   const missing = checkNarrative(audit);
   if (missing.length) console.log(`note: ${missing.length} narrative field(s) still carry placeholders: ${missing.slice(0, 6).join(', ')}${missing.length > 6 ? ', ...' : ''}`);
+} else if (cmd === 'handover') {
+  /*
+   * Файлы, которые покупатель кладёт к себе. Они же печатаются в отчёте, но в отчёте их надо
+   * перенабирать, а тут они лежат готовыми: llms.txt, разметка и правки заголовков.
+   */
+  const audit = JSON.parse(readFileSync(resolve(target), 'utf8'));
+  const lang = opt('--lang', audit?.meta?.lang === 'ru' ? 'ru' : 'en');
+  const dir = resolve(opt('--out', 'handover'));
+  mkdirSync(dir, { recursive: true });
+  const org = buildOrganisationSchema(audit, { lang });
+  const fixes = fixTitlesAndDescriptions(audit, { lang, limit: 40 });
+  writeFileSync(join(dir, 'llms.txt'), buildLlmsTxt(audit, { lang }), 'utf8');
+  writeFileSync(join(dir, 'organization.jsonld'), `${org.text}\n`, 'utf8');
+  const head = lang === 'ru' ? ['# Заголовки и описания', '', 'Чинится длина и структура, а не смысл.', ''] : ['# Titles and descriptions', '', 'Length and structure only, not new wording.', ''];
+  const body = fixes.flatMap((f) => [
+    `## ${f.path}`, '',
+    ...(f.title ? [`**title** — ${f.title.problem}`, '', `Сейчас: ${f.title.now || '—'}`.replace('Сейчас:', lang === 'ru' ? 'Сейчас:' : 'Now:'), '', `${lang === 'ru' ? 'Поставить' : 'Put'}: ${f.title.suggestion}`, ''] : []),
+    ...(f.description ? [`**description** — ${f.description.problem}`, '', `${lang === 'ru' ? 'Сейчас' : 'Now'}: ${f.description.now || '—'}`, '', `${lang === 'ru' ? 'Поставить' : 'Put'}: ${f.description.suggestion}`, ''] : []),
+  ]);
+  writeFileSync(join(dir, 'titles.md'), `${[...head, ...body].join('\n').trimEnd()}\n`, 'utf8');
+  console.log(`wrote ${dir}: llms.txt, organization.jsonld, titles.md (${fixes.length} page(s) to fix)`);
+  if (org.missing.length) {
+    console.log(lang === 'ru' ? 'в разметке осталось вписать руками:' : 'the markup still needs, by hand:');
+    for (const m of org.missing) console.log(`  ${m.field}: ${m.what}`);
+  }
 } else if (cmd === 'check') {
   const audit = JSON.parse(readFileSync(resolve(target), 'utf8'));
   const missing = checkNarrative(audit);

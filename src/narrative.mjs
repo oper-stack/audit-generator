@@ -113,8 +113,9 @@ function plural(n, one, few, many) {
   const d = n % 10; const dd = n % 100;
   return d === 1 && dd !== 11 ? one : d >= 2 && d <= 4 && (dd < 10 || dd >= 20) ? few : many;
 }
-const listRu = (a) => a.length > 1 ? `${a.slice(0, -1).join(', ')} и ${a[a.length - 1]}` : a[0] || '';
-const listEn = (a) => a.length > 1 ? `${a.slice(0, -1).join(', ')} and ${a[a.length - 1]}` : a[0] || '';
+const sep = (a) => (a.some((x) => String(x).includes(',')) ? '; ' : ', ');
+const listRu = (a) => (a.length < 2 ? a[0] || '' : sep(a) === '; ' ? a.join('; ') : `${a.slice(0, -1).join(', ')} и ${a[a.length - 1]}`);
+const listEn = (a) => (a.length < 2 ? a[0] || '' : sep(a) === '; ' ? a.join('; ') : `${a.slice(0, -1).join(', ')} and ${a[a.length - 1]}`);
 
 /** Проверки, которые Fix закрывает технически: ими меряется «сколько чинится быстро». */
 const MECHANICAL = new Set(['robots', 'robots-block', 'ai-search-access', 'sitemap', 'sitemap-foreign', 'sitemap-health', 'llms', 'title', 'description', 'h1', 'canonical', 'viewport', 'og', 'schema', 'faq-schema', 'org-schema', 'hreflang', 'xmlrpc', 'alt', 'h1-sample', 'dup-titles', 'utility', 'dates', 'trust-entity', 'trust-contact', 'trust-profiles', 'trust-about', 'trust-policies', 'conv-contact-path', 'conv-cta', 'conv-messenger', 'www', 'resources', 'conv-form-depth', 'conv-form-fields']);
@@ -163,7 +164,7 @@ export function draftNarrative(audit, opts = {}) {
   const weakest = areaName(scores.slice().sort((x, y) => x[1] - y[1])[0]?.[0] || '');
 
   // Кто клиент. Имя это адрес сайта, предмет прочитан с главной и помечен как прочитанный.
-  const desc = String(home.description || '').trim().slice(0, 180);
+  const desc = String(home.description || '').trim().slice(0, 180).replace(/[\s.]+$/, '');
   a.client.name = a.client.name?.includes('{{') ? host : a.client.name;
   if (String(a.client.subject).includes('{{')) a.client.subject = desc ? t.subjectFrom(desc) : t.subjectNone;
 

@@ -12,6 +12,7 @@ import { localiseBasisNote, AREAS_RU } from './i18n.mjs';
 import { MESSAGES as VISIBILITY_MESSAGES } from './visibility.mjs';
 import { softenHex } from './agency.mjs';
 import { renderDemandHtml, demandSourceRow } from './demand.mjs';
+import { buildLlmsTxt, buildOrganisationSchema, fixTitlesAndDescriptions } from './handover.mjs';
 
 const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const isPlaceholder = (s) => typeof s === 'string' && /\{\{[^}]*\}\}/.test(s);
@@ -48,6 +49,12 @@ const LABELS = {
     secondMeasure: 'A second, separate measurement: how this report scores its own checks',
     ofHundred: 'of 100', ofHundredShort: 'OF 100', aiVisibility: 'AI visibility', seoBasics: 'SEO basics',
     enginesHead: 'Readiness by engine', madeOf: 'What the score is made of', worth: 'worth', blockedIn: 'Blocked', colTables: 'Tables', colLinks: 'Links',
+    secHandover: 'Files to paste', handoverEyebrow: 'Ready to paste', handoverTitle: 'What to paste', handoverLead: 'Not advice: files. Everything below was assembled from your own pages, so nothing here was invented about your business.', llmsHead: 'llms.txt, the map for AI agents', llmsNote: 'Save this as llms.txt in the root of your site. An answer engine reads it instead of crawling every page.', andMoreInFile: '… the full file is attached to the email', orgHead: 'Organization markup', orgNote: 'Paste this into a script tag of type application/ld+json in the head of your homepage. Every value here was read from your site.', orgMissingHead: 'Fill in yourself', orgMissingNote: 'These fields are not on your site, so we did not invent them. Add them and the markup gets stronger.', metaHead: 'Titles and descriptions', metaMore: (n) => `${n} more page${n === 1 ? '' : 's'} need the same treatment; all of them are in the titles file attached to the email.`, metaNote: 'Length and structure only, not new wording: the suggestion is assembled from the page\u2019s own H1 and first paragraph so it fits the limit. Grey is what is there now, then why it is a problem, then what to put.',
+    secRivals: 'Rivals', rivalsEyebrow: 'Rivals', rivalsTitle: 'You and your rivals', pagesReadLabel: 'Pages it let us read', rivalsThin: 'An asterisk marks a score taken from fewer than three pages: it is what the site let us see, not everything it has.', rivalsWithheld: (list) => `${list.join(', ')} answered, but not on every page we asked for, so there is no score: a score that goes up because we read less is not one we will print.`, rivalsRefused: (list) => `Turned a robot away: ${list.join(', ')}. Bot protection answers the same way to an answer engine, so a site that refuses us is also a site an AI cannot read.`,
+    rivalsLead: 'The same code read your rivals, asking each for up to ten pages. The row under the score says how many pages each one actually handed over.',
+    rivalsFoot: 'A dash means the site did not answer at all, and that is a fact about the site, not a zero we invented.',
+    appendixEyebrow: 'Appendix', appendixPages: 'Every page we read', fullListInAppendix: 'The first pages are shown here; every page we read is listed in the appendix at the end.',
+    readNote: (read, wanted) => (read === wanted ? `All ${wanted} pages answered and were read.` : `${read} of ${wanted} pages answered and were read; the rest did not answer or the site stopped us.`),
     secOverview: 'Site overview', overviewEyebrow: '02 · Overview', whatSiteIs: 'What the site is', parameter: 'Parameter', value: 'Value', pagesSampled: 'Pages sampled', colUrl: 'URL', colTitle: 'Title', colWords: 'Words',
     secCritical: 'Critical issues', criticalEyebrow: '03 · P0', criticalTitle: 'Critical issues, fix first', whatItCosts: 'What it costs', theFix: 'Fix', noBody: 'This issue has no description in the audit file.', noCritical: 'No critical defects were found in the public signals.',
     secTechnical: 'Technical SEO', technicalEyebrow: '04 · Technical', technicalTitle: 'Technical and on-page checklist', colCheck: 'Check', colStatus: 'Status', colFinding: 'Finding',
@@ -90,6 +97,12 @@ const LABELS = {
     secondMeasure: 'Второе, отдельное измерение: как этот отчёт оценивает собственные проверки',
     ofHundred: 'из 100', ofHundredShort: 'ИЗ 100', aiVisibility: 'ИИ-видимость', seoBasics: 'Основы SEO',
     enginesHead: 'Готовность по движкам', madeOf: 'Из чего сложился балл', worth: 'вес', blockedIn: 'Закрыты', colTables: 'Таблиц', colLinks: 'Ссылок',
+    secHandover: 'Что вставить', handoverEyebrow: 'Готово к вставке', handoverTitle: 'Что вставить', handoverLead: 'Не советы, а файлы. Всё ниже собрано с ваших же страниц, поэтому ничего про ваш бизнес здесь не выдумано.', llmsHead: 'llms.txt, карта для агентов ИИ', llmsNote: 'Сохраните это файлом llms.txt в корне сайта. Ответная система читает его вместо того, чтобы обходить все страницы.', andMoreInFile: '… файл целиком приложен к письму', orgHead: 'Разметка организации', orgNote: 'Вставьте это в тег script с типом application/ld+json в head главной страницы. Каждое значение здесь прочитано с вашего сайта.', orgMissingHead: 'Впишите сами', orgMissingNote: 'Этих полей на сайте нет, и мы их не выдумывали. Впишите, и разметка станет сильнее.', metaHead: 'Заголовки и описания', metaMore: (n) => `Ещё ${n} странице${n === 1 ? '' : 'й'} нужна такая же правка, все они есть в файле с заголовками, приложенном к письму.`, metaNote: 'Чинится длина и структура, а не смысл: предложенный вариант собран из собственного H1 страницы и её первого абзаца так, чтобы уложиться в лимит. Серым то, что стоит сейчас, ниже чем это плохо, ниже что поставить.',
+    secRivals: 'Конкуренты', rivalsEyebrow: 'Конкуренты', rivalsTitle: 'Вы и ваши конкуренты', pagesReadLabel: 'Сколько страниц дал прочитать', rivalsThin: 'Звёздочкой помечен балл, посчитанный меньше чем по трём страницам: это то, что сайт дал посмотреть, а не всё, что у него есть.', rivalsWithheld: (list) => `${list.join(', ')} ответил, но не на все запрошенные страницы, поэтому балла нет: балл, который растёт оттого, что мы прочитали меньше, мы не печатаем.`, rivalsRefused: (list) => `Развернули робота: ${list.join(', ')}. Защита от ботов так же отвечает и ответной системе, поэтому сайт, который не пустил нас, не пустит и ИИ.`,
+    rivalsLead: 'Конкурентов читал тот же код и просил у каждого до десяти страниц. Строка под баллом говорит, сколько страниц каждый сайт отдал на самом деле.',
+    rivalsFoot: 'Прочерк значит, что сайт не ответил вовсе, и это факт про сайт, а не выдуманный нами ноль.',
+    appendixEyebrow: 'Приложение', appendixPages: 'Все прочитанные страницы', fullListInAppendix: 'Здесь первые строки, весь список прочитанных страниц лежит приложением в конце отчёта.',
+    readNote: (read, wanted) => (read === wanted ? `Ответили и прочитаны все ${wanted} страниц.` : `Из ${wanted} страниц ответили и прочитаны ${read}; остальные не ответили или сайт нас остановил.`),
     secOverview: 'О сайте', overviewEyebrow: '02 · Обзор', whatSiteIs: 'Что это за сайт', parameter: 'Параметр', value: 'Значение', pagesSampled: 'Проверенные страницы', colUrl: 'Адрес', colTitle: 'Заголовок', colWords: 'Слов',
     secCritical: 'Критичное', criticalEyebrow: '03 · Срочно', criticalTitle: 'Что чинить первым', whatItCosts: 'Чем это грозит', theFix: 'Как чинится', noBody: 'У этой проблемы нет описания в файле аудита.', noCritical: 'Критичных дефектов в публичных сигналах не найдено.',
     secTechnical: 'Техническое SEO', technicalEyebrow: '04 · Техника', technicalTitle: 'Техническая проверка и страницы', colCheck: 'Проверка', colStatus: 'Статус', colFinding: 'Что нашли',
@@ -195,6 +208,29 @@ function css() {
   .mast-meta { display: grid; grid-template-columns: repeat(4, auto); gap: 0 9mm; justify-content: start; border-top: 1px solid var(--rule); padding-top: 2.5mm; }
   .mast-meta dt { font-size: 6.8pt; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 0 0 .6mm; }
   .mast-meta dd { font-size: 8.5pt; font-weight: 600; margin: 0; }
+
+  /* Таблица конкурентов: свой сайт выделен, лучшее в строке подсвечено. */
+  table.rivals-table { table-layout: fixed; font-size: 8.8pt; }
+  table.rivals-table th, table.rivals-table td { padding-left: 1.4mm; padding-right: 1.4mm; }
+  table.rivals-table th:first-child, table.rivals-table td:first-child { width: 23%; }
+  table.rivals-table th.n, table.rivals-table td.n { text-align: center; font-variant-numeric: tabular-nums; }
+  table.rivals-table th.n { font-size: 6.8pt; letter-spacing: 0; text-transform: none; overflow-wrap: normal; word-break: normal; }
+  table.rivals-table th.mine { color: var(--accent); }
+  table.rivals-table td.beat { color: var(--ok); font-weight: 600; }
+  table.rivals-table td .na { color: var(--muted); }
+  table.rivals-table tr.lead-row td { font-family: "Fraunces", Georgia, serif; font-size: 13pt; }
+  table.rivals-table tr.foot-row td { color: var(--muted); font-size: 8pt; }
+  table.rivals-table td span { font-size: 8pt; color: var(--muted); }
+
+  /* Раздел «что вставить»: код мелко и моноширинно, чтобы копировался без потерь. */
+  .handover-page .hand-note { font-size: 8.5pt; color: var(--muted); line-height: 1.45; margin: 0 0 3mm; }
+  pre.code { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 7.5pt; line-height: 1.5; background: #fafbfb; border: 1px solid var(--rule); border-radius: 4px; padding: 3mm 4mm; white-space: pre-wrap; word-break: break-word; margin: 0 0 4mm; }
+  ul.hand-missing { margin: 0; padding-left: 5mm; font-size: 9pt; }
+  ul.hand-missing code { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 8pt; color: var(--accent); }
+  table.meta-fixes td { vertical-align: top; font-size: 8.5pt; }
+  table.meta-fixes .was { color: var(--muted); }
+  table.meta-fixes .why { color: var(--warn); font-size: 7.5pt; }
+  table.meta-fixes .now { color: var(--ink); font-weight: 600; }
   .tool-line { font-size: 7.5pt; color: var(--muted); line-height: 1.4; margin: 4mm 0 0; }
   .cover-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 6mm; margin-top: 14mm; padding-top: 6mm; border-top: 1px solid var(--rule); }
   .cover-meta dt { font-size: 7.5pt; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin-bottom: 1mm; }
@@ -227,7 +263,7 @@ function css() {
   .overall-grade { font-family: "Fraunces", Georgia, serif; font-size: 14pt; font-weight: 600; margin: 0 0 1.5mm; }
   .overall-note { font-size: 8.5pt; color: var(--muted); line-height: 1.45; margin: 0; }
 
-  h3.engines-head, h3.areas-head { font-size: 11pt; margin: 4.5mm 0 2.2mm; }
+  h3.engines-head, h3.areas-head { font-size: 11pt; margin: 4mm 0 2mm; }
   .engines { display: grid; grid-template-columns: repeat(5, 1fr); gap: 2.2mm; }
   .eng { border: 1px solid var(--rule); border-radius: 4px; padding: 2.4mm 2.6mm; background: #fafbfb; }
   .eng p { margin: 0; }
@@ -244,7 +280,7 @@ function css() {
   .eng-na .pbar i, .ar-na .pbar i { background: var(--muted); }
 
   .areas-bars { margin-bottom: 2mm; }
-  .ar { padding: 2mm 0; border-top: 1px solid var(--rule); }
+  .ar { padding: 1.6mm 0; border-top: 1px solid var(--rule); }
   .ar:first-child { border-top: 0; padding-top: 0.5mm; }
   .ar-h { display: grid; grid-template-columns: 1fr auto auto; gap: 3mm; align-items: baseline; margin-bottom: 1.4mm; }
   .ar-n { font-size: 9pt; font-weight: 600; }
@@ -273,6 +309,11 @@ function css() {
   .kpi { flex: 1; background: var(--panel); border-radius: 4px; padding: 3mm 4mm; }
   .kpi-value { font-family: "Fraunces", "Iowan Old Style", Georgia, serif; font-size: 17pt; font-weight: 600; color: var(--ink); line-height: 1.1; }
   .kpi-label { font-size: 8.5pt; color: var(--muted); margin-top: 1mm; }
+  table.pages.appendix { table-layout: fixed; }
+  table.pages.appendix td, table.pages.appendix th { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  table.pages.appendix td:nth-child(1), table.pages.appendix th:nth-child(1) { width: 33%; }
+  table.pages.appendix td:nth-child(2), table.pages.appendix th:nth-child(2) { width: 35%; }
+  table.pages.appendix td:nth-child(n+3), table.pages.appendix th:nth-child(n+3) { width: 8%; text-align: right; font-variant-numeric: tabular-nums; }
   td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; } .status-na { color: var(--muted); }
   .cards { display: grid; gap: 3mm; margin: 4mm 0; }
   .card { border-left: 3px solid var(--danger); background: #fbf1f0; padding: 3.5mm 4mm; border-radius: 0 4px 4px 0; }
@@ -377,7 +418,13 @@ export function toHtml(audit, brand = null) {
    * следующую страницу, и мы вернёмся к тому, от чего уходили.
    */
   const subjectText = t(a.client.subject);
-  const subjectShort = subjectText.length > 190 ? `${subjectText.slice(0, 187).trimEnd()}\u2026` : subjectText;
+  /* Обрыв на полуслове в первой строке отчёта за 149 выглядит как недоделка, поэтому режем по точке. */
+  const subjectShort = (() => {
+    if (subjectText.length <= 190) return subjectText;
+    const cut = subjectText.slice(0, 190);
+    const stop = cut.lastIndexOf('. ');
+    return stop > 60 ? cut.slice(0, stop + 1) : `${cut.slice(0, 187).trimEnd()}\u2026`;
+  })();
   const masthead = `<div class="masthead">${logo}<p class="mast-eyebrow">${L.eyebrowAudit}</p><h1 class="mast-title">${L.coverTitle.replace(/<br>/g, ' ')}</h1><p class="mast-sub">${subjectShort}</p><dl class="mast-meta"><div><dt>${L.auditSubject}</dt><dd>${t(a.client.name)}</dd></div><div><dt>${L.reportDate}</dt><dd>${esc(a.client.reportDate)}</dd></div><div><dt>${L.auditType}</dt><dd>${esc(a.meta.auditType)}</dd></div><div><dt>${L.preparedBy}</dt><dd>${esc(preparedBy)}</dd></div></dl></div>`;
   /*
    * Сводка занимает ДВА листа намеренно, а не один с переливом.
@@ -394,14 +441,36 @@ export function toHtml(audit, brand = null) {
    * строк, как техническую. Первый лист несёт параметры сайта и первые строки, дальше только
    * продолжение таблицы со своей шапкой.
    */
-  const sampleRows = (a.sample || []).filter((x) => x.title !== undefined).slice(0, 20);
+  /*
+   * Список прочитанных страниц. На двадцати строках это два листа, на ста это семь листов
+   * подряд одной таблицей посреди разбора. Поэтому в основной части печатаются первые строки,
+   * а весь список уезжает приложением в конец: покупатель за сто страниц имеет право видеть все
+   * сто адресов, но не вместо чтения.
+   */
+  const readStat = a.reading && typeof a.reading.read === 'number' ? a.reading : null;
+  const readNote = readStat && L.readNote ? `<p class="scorecard-foot">${esc(L.readNote(readStat.read, readStat.wanted))}</p>` : '';
+  const allSampleRows = (a.sample || []).filter((x) => x.title !== undefined);
+  const APPENDIX_FROM = 20;
+  /*
+   * В приложении заголовок обрезается: длинный переносится на вторую строку, и лист, рассчитанный
+   * по числу строк, переливается. Замерено: на восьмидесяти страницах так переливали три листа.
+   * Это справочник прочитанного, ключ в нём адрес, а не заголовок.
+   */
+  const appendixRow = (x) => {
+    const title = String(x.title || '');
+    const short = title.length > 52 ? `${title.slice(0, 50).trimEnd()}\u2026` : title;
+    return `<tr><td><code>${esc(new URL(x.url).pathname)}</code></td><td>${esc(short)}</td><td>${x.words}</td><td>${x.h2Count ?? '\u00b7'}</td><td>${x.tables ?? '\u00b7'}</td><td>${x.linkCount ?? '\u00b7'}</td><td>${x.images ? `${x.images - x.imagesNoAlt}/${x.images}` : '\u00b7'}</td></tr>`;
+  };
+
+  const asAppendix = allSampleRows.length > APPENDIX_FROM;
+  const sampleRows = asAppendix ? allSampleRows.slice(0, 7) : allSampleRows;
   const pagesHead = `<tr><th>${L.colUrl}</th><th>${L.colTitle}</th><th>${L.colWords}</th><th>H2</th><th>${L.colTables || 'Tables'}</th><th>${L.colLinks || 'Links'}</th><th>Alt</th></tr>`;
   const pageRow = (x) => `<tr><td><code>${esc(new URL(x.url).pathname)}</code></td><td>${esc(x.title)}</td><td>${x.words}</td><td>${x.h2Count ?? '\u00b7'}</td><td>${x.tables ?? '\u00b7'}</td><td>${x.linkCount ?? '\u00b7'}</td><td>${x.images ? `${x.images - x.imagesNoAlt}/${x.images}` : '\u00b7'}</td></tr>`;
   const FIRST_PAGE_ROWS = 7;
   const NEXT_PAGE_ROWS = 16;
   const firstRows = sampleRows.slice(0, FIRST_PAGE_ROWS);
   const restRows = sampleRows.slice(FIRST_PAGE_ROWS);
-  pages.push(`<div class="page">${header(a, L.secOverview, L)}<div class="eyebrow">${L.overviewEyebrow}</div><h2>${L.whatSiteIs}</h2><table><tr><th>${L.parameter}</th><th>${L.value}</th></tr>${(a.overview.rows || []).map(([k, v]) => `<tr><td>${t(k)}</td><td>${t(v)}</td></tr>`).join('')}</table><p>${t(a.overview.note)}</p><h3>${L.pagesSampled}</h3><table class="pages">${pagesHead}${firstRows.map(pageRow).join('')}</table>${footer(a, n++, preparedBy)}</div>`);
+  pages.push(`<div class="page">${header(a, L.secOverview, L)}<div class="eyebrow">${L.overviewEyebrow}</div><h2>${L.whatSiteIs}</h2><table><tr><th>${L.parameter}</th><th>${L.value}</th></tr>${(a.overview.rows || []).map(([k, v]) => `<tr><td>${t(k)}</td><td>${t(v)}</td></tr>`).join('')}</table><p>${t(a.overview.note)}</p><h3>${L.pagesSampled}</h3>${readNote}<table class="pages">${pagesHead}${firstRows.map(pageRow).join('')}</table>${asAppendix ? `<p class="scorecard-foot">${esc(L.fullListInAppendix || '')}</p>` : ''}${footer(a, n++, preparedBy)}</div>`);
   for (let i = 0; i < restRows.length; i += NEXT_PAGE_ROWS) {
     const chunk = restRows.slice(i, i + NEXT_PAGE_ROWS);
     pages.push(`<div class="page">${header(a, L.secOverview, L)}<div class="eyebrow">${L.overviewEyebrow}</div><h2>${L.pagesSampled}</h2><table class="pages">${pagesHead}${chunk.map(pageRow).join('')}</table>${footer(a, n++, preparedBy)}</div>`);
@@ -471,6 +540,95 @@ export function toHtml(audit, brand = null) {
   pages.push(`<div class="page">${header(a, L.secOffpage, L)}<div class="eyebrow">${L.offpageEyebrow}</div><h2>${L.offpageTitle}</h2>${checkTable('offpage')}${list(a.offpage.listed)}<p>${t(a.offpage.note)}</p>${footer(a, n++, preparedBy)}</div>`);
   pages.push(`<div class="page">${header(a, L.secOffpage, L)}<div class="eyebrow">${L.conversionEyebrow}</div><h2>${L.conversionTitle}</h2>${checkTable('conversion')}<table><tr><th>${L.colElement}</th><th>${L.colStatus}</th></tr>${(a.conversion.rows || []).map(([k, v]) => `<tr><td>${t(k)}</td><td>${t(v)}</td></tr>`).join('')}</table>${footer(a, n++, preparedBy)}</div>`);
 
+  /*
+   * Вы и ваши конкуренты. Балл видимости стоит первым, потому что он у всех посчитан по десяти
+   * страницам и сравним напрямую. Шесть оценок аудита идут ниже с подписью, что свой сайт читался
+   * глубже: без этой подписи «2 из 100» рядом с «1 из 10» читается как сравнение, которым не
+   * является. Сайт, который не ответил, получает прочерк, а не выдуманный ноль.
+   */
+  const rivals = Array.isArray(a.rivals) ? a.rivals.slice(0, 5) : [];
+  if (rivals.length) {
+    const mine = { host: a.meta.host, score: a.overall?.score ?? null, grade: a.overall?.grade ?? null, areas: a.overall?.areas || [], seo: a.overall?.seo?.score ?? null, reportScores: a.scores || {}, pagesRead: a.reading?.read ?? null };
+    const all = [mine, ...rivals];
+    const cell = (v, max) => (v === null || v === undefined ? `<span class="na">\u00b7</span>` : max ? `${v}<span>/${max}</span>` : String(v));
+    const best = (vals) => { const nums = vals.filter((x) => typeof x === 'number'); return nums.length ? Math.max(...nums) : null; };
+    const hostLabel = (h) => esc(String(h || '')).replace(/\.(?=[^.]+$)/, '<wbr>.');
+    const headRow = `<tr><th>${esc(L.colSignal || 'Signal')}</th>${all.map((x, i) => `<th class="n${i === 0 ? ' mine' : ''}">${hostLabel(x.host)}</th>`).join('')}</tr>`;
+    const scoreVals = all.map((x) => x.score);
+    const topScore = best(scoreVals);
+    /*
+     * Крупный сайт часто пускает робота только на главную. Балл, посчитанный по одной странице,
+     * это не то же самое, что балл по десяти, поэтому такой столбец помечается звёздочкой, а
+     * строка «сколько страниц дал прочитать» стоит сразу под баллом, где её видно вместе с ним.
+     */
+    const THIN = 3;
+    const thin = (x) => typeof x.pagesRead === 'number' && x.pagesRead > 0 && x.pagesRead < THIN;
+    const anyThin = rivals.some(thin);
+    const refused = rivals.filter((x) => x.reachable === false);
+    const withheld = rivals.filter((x) => x.reachable !== false && x.score === null);
+    const rows = [
+      `<tr class="lead-row"><td>${esc(L.aiVisibility || 'AI visibility')}</td>${all.map((x) => `<td class="n${x.score !== null && x.score === topScore ? ' beat' : ''}">${cell(x.score, 100)}${thin(x) ? '*' : ''}</td>`).join('')}</tr>`,
+      `<tr class="foot-row"><td>${esc(L.pagesReadLabel || 'Pages read')}</td>${all.map((x) => `<td class="n">${x.pagesRead ?? '\u00b7'}</td>`).join('')}</tr>`,
+      `<tr><td>${esc(L.seoBasics || 'SEO basics')}</td>${all.map((x) => `<td class="n">${cell(x.seo, 100)}</td>`).join('')}</tr>`,
+      ...(mine.areas || []).map((area, k) => {
+        const vals = all.map((x) => (x.areas && x.areas[k] ? x.areas[k].score : null));
+        const top = best(vals);
+        return `<tr><td>${esc(area.label)}</td>${vals.map((v) => `<td class="n${v !== null && v === top ? ' beat' : ''}">${cell(v, area.max)}</td>`).join('')}</tr>`;
+      }),
+    ].join('');
+    pages.push(`<div class="page">${header(a, L.secRivals || 'Rivals', L)}<div class="eyebrow">${esc(L.rivalsEyebrow || 'Rivals')}</div><h2>${esc(L.rivalsTitle || 'You and your rivals')}</h2><p class="lead">${esc(L.rivalsLead || '')}</p><table class="rivals-table">${headRow}${rows}</table><p class="scorecard-foot">${refused.length ? esc(L.rivalsFoot || '') : ''}${anyThin ? `${refused.length ? ' ' : ''}${esc(L.rivalsThin || '')}` : ''}${refused.length ? ` ${esc(L.rivalsRefused ? L.rivalsRefused(refused.map((x) => `${x.host}${x.status ? ` (${x.status})` : ''}`)) : '')}` : ''}${withheld.length ? ` ${esc(L.rivalsWithheld ? L.rivalsWithheld(withheld.map((x) => x.host)) : '')}` : ''}</p>${footer(a, n++, preparedBy)}</div>`);
+  }
+
+  /*
+   * «Что вставить»: готовые файлы прямо в отчёте. Покупатель за 149 получает не список
+   * пожеланий, а карту для агентов, разметку организации и починенные заголовки, которые можно
+   * скопировать отсюда или взять файлами из письма.
+   *
+   * Пропуски в разметке названы отдельно и намеренно: поле, которого нет в данных, мы не
+   * придумываем, а говорим, что туда вписать.
+   */
+  /*
+   * Готовые файлы входят только в аудит за 149. На ступенях дешевле они не печатаются: иначе
+   * то, чем дорогой товар отличается от дешёвого, уезжает в дешёвый бесплатно.
+   */
+  if (a.meta?.tier === 'audit') {
+    const hl = a.meta?.lang === 'ru' ? 'ru' : 'en';
+    const llms = buildLlmsTxt(a, { lang: hl });
+    const org = buildOrganisationSchema(a, { lang: hl });
+    const allFixes = fixTitlesAndDescriptions(a, { lang: hl, limit: 40 });
+    const metaFixes = allFixes.slice(0, 6);
+    const llmsShort = llms.split('\n').slice(0, 16).join('\n');
+    const cut = llms.split('\n').length > 16;
+    pages.push(`<div class="page handover-page">${header(a, L.secHandover || 'Files', L)}<div class="eyebrow">${esc(L.handoverEyebrow || 'Files')}</div><h2>${esc(L.handoverTitle || 'What to paste')}</h2><p class="lead">${esc(L.handoverLead || '')}</p>
+      <h3>${esc(L.llmsHead || 'llms.txt')}</h3><p class="hand-note">${esc(L.llmsNote || '')}</p><pre class="code">${esc(llmsShort)}${cut ? `\n${esc(L.andMoreInFile || '')}` : ''}</pre>
+      ${footer(a, n++, preparedBy)}</div>`);
+    pages.push(`<div class="page handover-page">${header(a, L.secHandover || 'Files', L)}<div class="eyebrow">${esc(L.handoverEyebrow || 'Files')}</div><h2>${esc(L.orgHead || 'Organization markup')}</h2><p class="hand-note">${esc(L.orgNote || '')}</p><pre class="code">${esc(org.text)}</pre>
+      ${org.missing.length ? `<h3>${esc(L.orgMissingHead || 'Fill in yourself')}</h3><p class="hand-note">${esc(L.orgMissingNote || '')}</p><ul class="hand-missing">${org.missing.map((m) => `<li><code>${esc(m.field)}</code> ${esc(m.what)}</li>`).join('')}</ul>` : ''}
+      ${footer(a, n++, preparedBy)}</div>`);
+    if (metaFixes.length) {
+      /*
+       * Три строки на лист, а не шесть. Замерено на отрисованном листе: самая высокая строка
+       * это 250 пикселей (два блока по четыре строки, каждая длинная часть в две строки), от
+       * листа под таблицу остаётся около 790. Длина того, что стоит сейчас, ограничена здесь же,
+       * иначе одна страница с описанием в триста знаков ломает расчёт.
+       */
+      const METAFIX_ROWS = 3;
+      const short = (x) => { const t = String(x || ''); return t.length > 150 ? `${t.slice(0, 148).trimEnd()}\u2026` : t; };
+      const rowOf = (f) => `<tr><td><code>${esc(f.path)}</code></td><td>${[
+        f.title ? `<b>title</b><br><span class="was">${esc(short(f.title.now) || '—')}</span><br><span class="why">${esc(f.title.problem)}</span><br><span class="now">${esc(f.title.suggestion)}</span>` : '',
+        f.description ? `<b>description</b><br><span class="was">${esc(short(f.description.now) || '—')}</span><br><span class="why">${esc(f.description.problem)}</span><br><span class="now">${esc(f.description.suggestion)}</span>` : '',
+      ].filter(Boolean).join('<br><br>')}</td></tr>`;
+      const parts = Math.ceil(metaFixes.length / METAFIX_ROWS);
+      for (let i = 0; i < metaFixes.length; i += METAFIX_ROWS) {
+        const chunk = metaFixes.slice(i, i + METAFIX_ROWS);
+        const part = Math.floor(i / METAFIX_ROWS) + 1;
+        const title = parts > 1 ? `${L.metaHead || 'Titles and descriptions'} (${part}/${parts})` : (L.metaHead || 'Titles and descriptions');
+        const last = part === parts;
+        pages.push(`<div class="page handover-page">${header(a, L.secHandover || 'Files', L)}<div class="eyebrow">${esc(L.handoverEyebrow || 'Files')}</div><h2>${esc(title)}</h2><p class="hand-note">${esc(L.metaNote || '')}</p><table class="meta-fixes"><tr><th>${esc(L.colUrl)}</th><th>${esc(L.colFinding)}</th></tr>${chunk.map(rowOf).join('')}</table>${last && allFixes.length > metaFixes.length ? `<p class="scorecard-foot">${esc(L.metaMore ? L.metaMore(allFixes.length - metaFixes.length) : '')}</p>` : ''}${footer(a, n++, preparedBy)}</div>`);
+      }
+    }
+  }
+
   const phases = (a.roadmap || []).map((x) => `<div class="phase"><div class="phase-head"><span class="badge">${esc(x.badge)}</span><span class="phase-title">${t(x.title)}</span></div>${olist(x.items)}</div>`).join('');
   /*
    * Последний лист несёт и дорожную карту, и источники с границами замера. Оба раздела короткие,
@@ -480,6 +638,23 @@ export function toHtml(audit, brand = null) {
   pages.push(`<div class="page">${header(a, L.secRoadmap, L)}<div class="eyebrow">${L.roadmapEyebrow}</div><h2>${L.roadmapTitle}</h2>${phases}<div class="verdict"><p><strong>${L.keyMessage}</strong> ${t(a.closing)}</p></div><div class="eyebrow" style="margin-top:7mm">${L.limitationsEyebrow}</div><h2>${L.sourcesTitle}</h2>${sources.length ? `<table><tr><th>${L.colSource}</th><th>${L.colAccess}</th><th>${L.colWhatRead}</th></tr>${sources.map((x) => `<tr><td>${t(x.name)}</td><td>${t(x.access)}</td><td>${t(x.detail)}</td></tr>`).join('')}</table><p class="scorecard-foot">${L.sourcesFoot}</p>` : ''}<h3>${L.limitations}</h3>${list(a.limitations)}<p class="tool-line">${esc(brand && brand.showToolLine === false ? L.reproducible : L.collectedBy(a.meta.tool, (a.meta.collectedAt || '').slice(0, 10)))}</p>${footer(a, n++, preparedBy)}</div>`);
   // Карта спроса идёт приложением после дорожной карты: она не входит в баллы, и об этом
   // сказано в ней самой и в таблице источников выше.
+  /* Приложение со всеми прочитанными страницами: только когда их больше двадцати. */
+  if (asAppendix) {
+    /*
+     * Четырнадцать строк, а не на глаз. Замерено на отрисованном листе: строка таблицы это
+     * 54 пикселя, от верха листа до таблицы уходит 189, снизу отступ и подвал ещё 106.
+     * Остаётся около 790 пикселей, это четырнадцать строк вместе с шапкой таблицы.
+     */
+    const APPENDIX_ROWS = 14;
+    for (let i = 0; i < allSampleRows.length; i += APPENDIX_ROWS) {
+      const chunk = allSampleRows.slice(i, i + APPENDIX_ROWS);
+      const part = Math.floor(i / APPENDIX_ROWS) + 1;
+      const parts = Math.ceil(allSampleRows.length / APPENDIX_ROWS);
+      const title = parts > 1 ? `${L.appendixPages || L.pagesSampled} (${part}/${parts})` : (L.appendixPages || L.pagesSampled);
+      pages.push(`<div class="page">${header(a, L.secOverview, L)}<div class="eyebrow">${esc(L.appendixEyebrow || 'Appendix')}</div><h2>${esc(title)}</h2><table class="pages appendix">${pagesHead}${chunk.map(appendixRow).join('')}</table>${footer(a, n++, preparedBy)}</div>`);
+    }
+  }
+
   if (a.demand && Array.isArray(a.demand.queries)) {
     pages.push(`<div class="page">${header(a, L.secDemand, L)}<div class="eyebrow">${L.demandEyebrow}</div><h2>${L.demandTitle}</h2>${renderDemandHtml(a.demand, { lang: a.meta?.lang === 'ru' ? 'ru' : 'en' })}${footer(a, n++, preparedBy)}</div>`);
   }
