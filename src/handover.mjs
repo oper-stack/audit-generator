@@ -17,7 +17,7 @@ const trim = (s, n) => {
   if (t.length <= n) return t;
   const cut = t.slice(0, n);
   const space = cut.lastIndexOf(' ');
-  return `${(space > n * 0.6 ? cut.slice(0, space) : cut).replace(/[\s.,;:–—-]+$/, '')}…`;
+  return `${(space > n * 0.6 ? cut.slice(0, space) : cut).replace(/[\s.,;:·|–—-]+$/, '')}…`;
 };
 
 /**
@@ -114,7 +114,7 @@ export function buildLlmsTxt(audit, { lang = 'en', maxLinks = 60 } = {}) {
   const pages = (audit?.sample || []).filter((p) => p.title !== undefined && p.url);
   const home = pages[0] || {};
   const name = brandOf(audit).name || host;
-  const about = trim(home.description || home.firstPara || '', 200);
+  const about = sentenceTrim(home.description || home.firstPara || '', 200);
 
   const bySection = new Map();
   for (const p of pages.slice(0, maxLinks)) {
@@ -133,7 +133,7 @@ export function buildLlmsTxt(audit, { lang = 'en', maxLinks = 60 } = {}) {
     lines.push('');
     for (const p of list) {
       const note = sentenceTrim(p.description || p.firstPara || '', 140);
-      lines.push(`- [${trim(p.title, 70)}](${p.url})${note ? `: ${note}` : ''}`);
+      lines.push(`- [${trim(p.title, 95)}](${p.url})${note ? `: ${note}` : ''}`);
     }
     lines.push('');
   }
@@ -154,7 +154,7 @@ export function buildOrganisationSchema(audit, { lang = 'en' } = {}) {
   const home = pages[0] || {};
   const brand = brandOf(audit);
   const name = brand.name || host;
-  const description = trim(home.description || home.firstPara || '', 200);
+  const description = sentenceTrim(home.description || home.firstPara || '', 200);
   const profiles = (audit?.entity?.profiles || []).map((h) => (/^https?:\/\//i.test(h) ? h : `https://${h}`));
 
   const json = { '@context': 'https://schema.org', '@type': 'Organization', name, url: site };
